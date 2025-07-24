@@ -44,13 +44,11 @@ def compute_signals(df_ind):
     for date, row in df.iterrows():
         if row['pK'] < row['pD'] and row['CompK'] > row['CompD']:
             sigs.append((date, 'buy'))
-        if row['pK'] > row['pD'] and row['CompK'] < row['CompD']:
+        elif row['pK'] > row['pD'] and row['CompK'] < row['CompD']:
             sigs.append((date, 'sell'))
     return sigs
 
 # 외국인/기관 공통 순매수 상위 종목 조회 함수
-# API 포털에서 확인한 `foreign-institution-total` endpoint 사용
-
 def get_common_net_buy(n=10):
     ep = 'foreign-institution-total'
     url = f"{KIS_BASE_QUOT}/{ep}"
@@ -62,19 +60,11 @@ def get_common_net_buy(n=10):
         'MAX_CNT': n
     }
     try:
-        # GET 방식으로 요청
         r = requests.get(url, headers=headers, params=params, timeout=10)
         r.raise_for_status()
     except requests.RequestException as e:
         print(f"KIS API error (foreign-institution-total): {e}")
         return []
-    try:
-        data = r.json()
-    except ValueError:
-        print(f"JSON decode error (foreign-institution-total): {r.text}")
-        return []
-    items = data.get('output2') or data.get('output') or []
-    return [itm.get('stck_shrn_iscd') for itm in items if itm.get('stck_shrn_iscd')]]
     try:
         data = r.json()
     except ValueError:
@@ -120,7 +110,6 @@ def plot_signals(code, df, dfi, sigs):
 
 # 메인 실행
 if __name__ == '__main__':
-    # 공통 순매수 종목 조회
     common = get_common_net_buy()
     if not common:
         send_telegram("공통 순매수 종목이 없습니다.")
