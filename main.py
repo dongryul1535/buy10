@@ -1,4 +1,3 @@
-
 import os
 import io
 import requests
@@ -61,7 +60,7 @@ def get_common_net_buy(n=10):
         'MAX_CNT': n
     }
     try:
-        r = requests.get(url, headers=headers, params=params, timeout=10)
+        r = requests.post(url, headers=headers, json=params, timeout=10)
         r.raise_for_status()
     except requests.RequestException as e:
         print(f"KIS API error (foreign-institution-total): {e}")
@@ -126,4 +125,3 @@ if __name__ == '__main__':
                 send_telegram(code, buf)
             else:
                 send_telegram(f"{code}: 신호가 없습니다.")
-
