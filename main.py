@@ -8,21 +8,26 @@ import matplotlib.font_manager as fm
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
-# 환경 변수
-KIS_APP_KEY = os.getenv('KIS_APP_KEY')
-KIS_APP_SECRET = os.getenv('KIS_APP_SECRET')
-KIS_ACCNO = os.getenv('KIS_ACCOUNT_NUMBER')
+# 환경 변수 및 설정
+SIMULATION = os.getenv('SIMULATION', 'false').lower() == 'true'
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 FONT_PATH = 'fonts/NanumGothic.ttf'
+
+# KIS 인증 정보 (실계좌 / 모의계좌)
+KIS_APP_KEY = os.getenv('KIS_APP_KEY')
+KIS_APP_SECRET = os.getenv('KIS_APP_SECRET')
+if SIMULATION:
+    KIS_BASE = 'https://sandbox-openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations'
+    KIS_ACCNO = os.getenv('KIS_SIM_ACCOUNT_NUMBER')
+else:
+    KIS_BASE = 'https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations'
+    KIS_ACCNO = os.getenv('KIS_ACCOUNT_NUMBER')
 
 # 한글 폰트 설정
 if os.path.exists(FONT_PATH):
     font_prop = fm.FontProperties(fname=FONT_PATH)
     plt.rcParams['font.family'] = font_prop.get_name()
-
-# KIS API Quotations 기본 URL
-KIS_BASE = 'https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations'
 
 # MACD+Stochastic 합성 지표 계산
 def compute_indicators(df):
@@ -48,7 +53,7 @@ def compute_signals(df):
             sigs.append((idx, 'sell'))
     return sigs
 
-# 외국인/기관 공통 순매수 종목 조회
+# 외국인/기관 공통 순매수 상위 종목 조회
 def get_common_net_buy(n=10):
     url = f"{KIS_BASE}/foreign-institution-total"
     headers = {
@@ -95,7 +100,7 @@ def plot_signals(code, df, dfi, sigs):
         marker = '^' if typ == 'buy' else 'v'
         color = 'lime' if typ == 'buy' else 'red'
         axs[0].scatter(date, df.loc[date, 'Close'], marker=marker, color=color)
-    axs[0].set_title(f"{code} Price & Signals")
+    axs[0].set_title(f"{code} Price & Signals{' (모의)' if SIMULATION else ''}")
     axs[0].grid(True, linestyle='--', linewidth=0.5)
     axs[1].plot(dfi.index, dfi['CompK'], label='CompK', linewidth=1)
     axs[1].plot(dfi.index, dfi['CompD'], label='CompD', linewidth=1)
@@ -114,7 +119,7 @@ def main():
     if not common:
         send_telegram("공통 순매수 종목이 없습니다.")
         return
-    send_telegram(f"공통 순매수 종목: {', '.join(common)}")
+    send_telegram(f"공통 순매수 종목{' (모의)' if SIMULATION else ''}: {', '.join(common)}")
     start_date = (datetime.now() - relativedelta(months=6)).strftime('%Y-%m-%d')
     for code in common:
         df = fdr.DataReader(code, start_date)
