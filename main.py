@@ -15,13 +15,16 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 FONT_PATH = 'fonts/NanumGothic.ttf'
 
 # KIS 인증 정보 (실계좌 / 모의계좌)
-KIS_APP_KEY = os.getenv('KIS_APP_KEY')
-KIS_APP_SECRET = os.getenv('KIS_APP_SECRET')
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 if SIMULATION:
-    # 모의투자용: Production host with sandbox port
-    KIS_BASE = 'https://openapi.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations'
+    # 모의투자용: HTTP + sandbox host and port
+    KIS_BASE = 'http://sandbox-openapi.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations'
     KIS_ACCNO = os.getenv('KIS_SIM_ACCOUNT_NUMBER')
 else:
+    KIS_BASE = 'https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations'
+    KIS_ACCNO = os.getenv('KIS_ACCOUNT_NUMBER')
     KIS_BASE = 'https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations'
     KIS_ACCNO = os.getenv('KIS_ACCOUNT_NUMBER')
 
