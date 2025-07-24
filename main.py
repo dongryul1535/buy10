@@ -20,8 +20,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 KIS_APP_KEY = os.getenv('KIS_APP_KEY')
 KIS_APP_SECRET = os.getenv('KIS_APP_SECRET')
 if SIMULATION:
-    # 모의투자용: HTTP + sandbox host and port
-    KIS_BASE = 'http://sandbox-openapi.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations'
+    # 모의투자용: production host with sandbox port (29443)
+    KIS_BASE = 'http://openapi.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations'
     KIS_ACCNO = os.getenv('KIS_SIM_ACCOUNT_NUMBER')
 else:
     # 실계좌용
