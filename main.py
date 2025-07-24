@@ -62,11 +62,19 @@ def get_common_net_buy(n=10):
         'MAX_CNT': n
     }
     try:
-        r = requests.post(url, headers=headers, json=params, timeout=10)
+        # GET 방식으로 요청
+        r = requests.get(url, headers=headers, params=params, timeout=10)
         r.raise_for_status()
     except requests.RequestException as e:
         print(f"KIS API error (foreign-institution-total): {e}")
         return []
+    try:
+        data = r.json()
+    except ValueError:
+        print(f"JSON decode error (foreign-institution-total): {r.text}")
+        return []
+    items = data.get('output2') or data.get('output') or []
+    return [itm.get('stck_shrn_iscd') for itm in items if itm.get('stck_shrn_iscd')]]
     try:
         data = r.json()
     except ValueError:
