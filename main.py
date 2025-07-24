@@ -39,12 +39,6 @@ def get_access_token():
         raise Exception(f"Token request failed: {resp.status_code} {resp.text}")
     token_data = resp.json()
     return token_data.get('access_token') or token_data.get('accessToken')
-    url = f"{KIS_BASE}/authentication-token"
-    headers = {'Content-Type': 'application/json', 'appKey': KIS_APP_KEY, 'appSecret': KIS_APP_SECRET}
-    resp = requests.post(url, headers=headers)
-    resp.raise_for_status()
-    data = resp.json()
-    return data.get('accessToken')
 
 # MACD+Stoch 합성 지표 계산
 def compute_indicators(df):
