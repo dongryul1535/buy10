@@ -4,6 +4,7 @@ import requests
 import pandas as pd
 import FinanceDataReader as fdr
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
@@ -13,6 +14,12 @@ KIS_APP_SECRET = os.getenv('KIS_APP_SECRET')
 KIS_ACCNO = os.getenv('KIS_ACCOUNT_NUMBER')
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+FONT_PATH = 'fonts/NanumGothic.ttf'  # 한글 폰트 경로
+
+# 한글 폰트 설정
+if os.path.exists(FONT_PATH):
+    font_prop = fm.FontProperties(fname=FONT_PATH)
+    plt.rcParams['font.family'] = font_prop.get_name()
 
 # KIS API 기본 정보
 KIS_BASE_URL = 'https://openapi.koreainvestment.com:9443'
