@@ -49,31 +49,43 @@ def compute_signals(df_ind):
             sigs.append((date,'sell'))
     return sigs
 
-# 순매수 상위 종목 조회 (외국인/기관 별도 endpoint)
+# 순매수 상위 종목 조회 (외국인/기관 공통 analysis endpoint)
+KIS_BASE_ANALYSIS = 'https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/analysis'
+ENDPOINTS = {'foreign': 'stock-foreign-net-trend', 'institution': 'stock-institution-net-trend'}
+
 def get_top_net_buy(inv_type, inv_code, n=10):
-    # endpoint 결정
-    if inv_type=='foreign': ep='investor-foreign-net'
-    elif inv_type=='institution': ep='investor-institution-net'
-    else: ep='investor-net'
-    url=f"{KIS_BASE}/{ep}"
-    headers={'Content-Type':'application/json','appKey':KIS_APP_KEY,'appSecret':KIS_APP_SECRET}
-    params={'CANO':KIS_ACCNO,'INQR_DVSN':'2','INQR_DT':datetime.now().strftime('%Y%m%d'),
-            'INVST_DIV_CODE':inv_code,'MAX_CNT':n}
+    """
+    analysis group의 종목별 순매수 추이 endpoint 호출
+    inv_type: 'foreign' 또는 'institution'
+    """
+    ep = ENDPOINTS.get(inv_type)
+    if not ep:
+        print(f"Unknown investor type: {inv_type}")
+        return []
+    url = f"{KIS_BASE_ANALYSIS}/{ep}"
+    headers = {'Content-Type': 'application/json', 'appKey': KIS_APP_KEY, 'appSecret': KIS_APP_SECRET}
+    params = {
+        'CANO': KIS_ACCNO,
+        'INQR_DVSN': '2',
+        'INQR_DT': datetime.now().strftime('%Y%m%d'),
+        'INVST_DIV_CODE': inv_code,
+        'MAX_CNT': n
+    }
     try:
-        r=requests.get(url,headers=headers,params=params,timeout=10)
+        r = requests.get(url, headers=headers, params=params, timeout=10)
         r.raise_for_status()
     except requests.RequestException as e:
         print(f"KIS API error ({ep}): {e}")
         return []
     try:
-        data=r.json()
+        data = r.json()
     except ValueError:
         print(f"JSON decode error ({ep}): {r.text}")
         return []
-    output=data.get('output2') or []
-    return [itm.get('stck_shrn_iscd') for itm in output if itm.get('stck_shrn_iscd')]
-
-# 텔레그램 전송
+    # output2 키 대신 output 또는 data['output']일 수 있습니다. 실제 응답 structure 확인 후 수정하세요.
+    items = data.get('output2') or data.get('output') or []
+    # 각 item에 'stck_shrn_iscd' 대신 'shrtot_amt' 등의 필드 명이 다를 수 있으므로 확인 필요
+    return [itm.get('stck_shrn_iscd') for itm in items if itm.get('stck_shrn_iscd')]
 def send_telegram(text, buf=None):
     bot=f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
     if buf:
