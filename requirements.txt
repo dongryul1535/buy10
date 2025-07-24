@@ -1,0 +1,5 @@
+finance-datareader>=0.9.59
+pandas>=1.5.3
+matplotlib>=3.8.4
+python-dateutil
+requests>=2.31.0
