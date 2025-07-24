@@ -1,5 +1,3 @@
-# Bot Script: kis_fdr_macd_stoch_telegram.py
-```python
 import os
 import io
 import requests
@@ -98,48 +96,4 @@ if __name__=='__main__':
             df=fdr.DataReader(c,start);dfi=compute_indicators(df);sigs=compute_signals(dfi)
             if sigs: send_telegram(c,plot_signals(c,df,dfi,sigs))
             else: send_telegram(f"{c}: 신호 없음.")
-```
 
----
-
-# requirements.txt
-```
-finance-datareader>=0.9.59
-pandas
-matplotlib
-python-dateutil
-requests
-```
-
----
-
-# GitHub Actions Workflow (`.github/workflows/run-bot.yml`)
-```yaml
-name: Run MACD+Stoch Bot
-
-on:
-  schedule:
-    - cron: '15 1 * * 1-5'  # 평일 10:15 KST (UTC 01:15)
-  workflow_dispatch:
-
-jobs:
-  run-bot:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      - name: Run bot script
-        run: python kis_fdr_macd_stoch_telegram.py
-        env:
-          KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}
-          KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}
-          KIS_ACCOUNT_NUMBER: ${{ secrets.KIS_ACCOUNT_NUMBER }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-```
