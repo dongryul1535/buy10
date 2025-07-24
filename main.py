@@ -21,7 +21,7 @@ if SIMULATION:
     KIS_BASE = 'https://sandbox-openapi.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations'
     KIS_ACCNO = os.getenv('KIS_SIM_ACCOUNT_NUMBER')
 else:
-    KIS_BASE = 'https://openapi.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations'
+    KIS_BASE = 'https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations'
     KIS_ACCNO = os.getenv('KIS_ACCOUNT_NUMBER')
 
 # 한글 폰트 설정
@@ -68,7 +68,8 @@ def get_common_net_buy(n=10):
         'MAX_CNT': n
     }
     try:
-        r = requests.get(url, headers=headers, params=params, timeout=10)
+        # SSL 인증서 오류가 발생하는 모의투자환경을 위해 verify를 False로 설정
+        r = requests.get(url, headers=headers, params=params, timeout=10, verify=(not SIMULATION))
         r.raise_for_status()
     except requests.RequestException as e:
         print(f"KIS API error (foreign-institution-total): {e}")
