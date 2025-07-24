@@ -23,7 +23,6 @@ if os.path.exists(FONT_PATH):
 
 # KIS API 기본 정보
 KIS_BASE_URL = 'https://openapi.koreainvestment.com:9443'
-# 투자자 구분 코드
 INVESTORS = {'foreign': '1000', 'institution': '2000'}
 
 # MACD+Stoch 합성 지표 계산
@@ -34,66 +33,96 @@ def compute_indicators(df):
     signal = macd.ewm(span=9).mean()
     low14 = df['Low'].rolling(14).min()
     high14 = df['High'].rolling(14).max()
-    stoch_k = 100*(df['Close']-low14)/(high14-low14)
+    stoch_k = 100 * (df['Close'] - low14) / (high14 - low14)
     stoch_d = stoch_k.rolling(3).mean()
-    comp_k, comp_d = macd+stoch_k, signal+stoch_d
-    return pd.DataFrame({'CompK':comp_k,'CompD':comp_d}).dropna()
+    comp_k, comp_d = macd + stoch_k, signal + stoch_d
+    return pd.DataFrame({'CompK': comp_k, 'CompD': comp_d}).dropna()
 
 # 교차 신호 계산
 def compute_signals(df_ind):
     df = df_ind.copy()
     df['pK'], df['pD'] = df['CompK'].shift(), df['CompD'].shift()
     sigs = []
-    for date,row in df.iterrows():
-        if row['pK']<row['pD'] and row['CompK']>row['CompD']:
-            sigs.append((date,'buy'))
-        if row['pK']>row['pD'] and row['CompK']<row['CompD']:
-            sigs.append((date,'sell'))
+    for date, row in df.iterrows():
+        if row['pK'] < row['pD'] and row['CompK'] > row['CompD']:
+            sigs.append((date, 'buy'))
+        if row['pK'] > row['pD'] and row['CompK'] < row['CompD']:
+            sigs.append((date, 'sell'))
     return sigs
 
-# 순매수 상위 종목 조회
+# 순매수 상위 종목 조회 (에러 처리 추가)
 def get_top_net_buy(inv_code, n=10):
-    url=f"{KIS_BASE_URL}/uapi/domestic-stock/v1/quotations/investor-net"
-    h={'Content-Type':'application/json','appKey':KIS_APP_KEY,'appSecret':KIS_APP_SECRET}
-    p={'CANO':KIS_ACCNO,'INQR_DVSN':'2','INQR_DT':datetime.now().strftime('%Y%m%d'),
-       'INVST_DIV_CODE':inv_code,'MAX_CNT':n}
-    out=requests.get(url,headers=h,params=p).json().get('output2',[])
-    return [i['stck_shrn_iscd'] for i in out]
+    url = f"{KIS_BASE_URL}/uapi/domestic-stock/v1/quotations/investor-net"
+    headers = {'Content-Type': 'application/json', 'appKey': KIS_APP_KEY, 'appSecret': KIS_APP_SECRET}
+    params = {
+        'CANO': KIS_ACCNO,
+        'INQR_DVSN': '2',
+        'INQR_DT': datetime.now().strftime('%Y%m%d'),
+        'INVST_DIV_CODE': inv_code,
+        'MAX_CNT': n
+    }
+    try:
+        resp = requests.get(url, headers=headers, params=params, timeout=10)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        print(f"KIS API request error: {e}")
+        return []
+    try:
+        data = resp.json()
+    except ValueError:
+        print(f"KIS API JSON decode error, response text: {resp.text}")
+        return []
+    items = data.get('output2') or []
+    return [item.get('stck_shrn_iscd') for item in items if item.get('stck_shrn_iscd')]
 
 # 텔레그램 전송
-def send_telegram(txt,buf=None):
-    bot=f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
+def send_telegram(txt, buf=None):
+    bot_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
     if buf:
-        files={'photo':buf};data={'chat_id':TELEGRAM_CHAT_ID,'caption':txt}
-        requests.post(bot+'sendPhoto',data=data,files=files)
+        files = {'photo': buf}
+        data = {'chat_id': TELEGRAM_CHAT_ID, 'caption': txt}
+        requests.post(bot_url + 'sendPhoto', data=data, files=files)
     else:
-        requests.post(bot+'sendMessage',data={'chat_id':TELEGRAM_CHAT_ID,'text':txt})
+        requests.post(bot_url + 'sendMessage', data={'chat_id': TELEGRAM_CHAT_ID, 'text': txt})
 
 # 차트 생성
-def plot_signals(code,df,dfi,sigs):
+def plot_signals(code, df, dfi, sigs):
     plt.style.use('dark_background')
-    fig,axs=plt.subplots(2,1,figsize=(8,6), gridspec_kw={'height_ratios':[2,1]})
-    axs[0].plot(df.index,df['Close'],linewidth=1.2)
-    for date,typ in sigs:
-        m='^' if typ=='buy' else 'v';c='lime' if typ=='buy' else 'red'
-        axs[0].scatter(date,df.loc[date,'Close'],marker=m,color=c)
+    fig, axs = plt.subplots(2, 1, figsize=(8, 6), gridspec_kw={'height_ratios': [2, 1]})
+    axs[0].plot(df.index, df['Close'], linewidth=1.2)
+    for date, typ in sigs:
+        price = df.loc[date, 'Close']
+        marker = '^' if typ == 'buy' else 'v'
+        color = 'lime' if typ == 'buy' else 'red'
+        axs[0].scatter(date, price, marker=marker, color=color)
     axs[0].set_title(f"{code} Price & Signals")
-    axs[0].grid(True,ls='--',lw=0.5)
-    axs[1].plot(dfi.index,dfi['CompK'],label='CompK');axs[1].plot(dfi.index,dfi['CompD'],label='CompD')
-    axs[1].legend();axs[1].grid(True,ls='--',lw=0.5)
+    axs[0].grid(True, linestyle='--', linewidth=0.5)
+    axs[1].plot(dfi.index, dfi['CompK'], label='CompK', linewidth=1)
+    axs[1].plot(dfi.index, dfi['CompD'], label='CompD', linewidth=1)
+    axs[1].legend(loc='upper left')
+    axs[1].grid(True, linestyle='--', linewidth=0.5)
     plt.tight_layout()
-    buf=io.BytesIO();plt.savefig(buf,format='png',dpi=150);buf.seek(0);plt.close(fig)
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=150)
+    buf.seek(0)
+    plt.close(fig)
     return buf
 
-if __name__=='__main__':
-    f=set(get_top_net_buy(INVESTORS['foreign']));i=set(get_top_net_buy(INVESTORS['institution']))
-    common=sorted(f&i)
-    if not common: send_telegram("공통 종목 없음.")
+if __name__ == '__main__':
+    foreign_codes = set(get_top_net_buy(INVESTORS['foreign']))
+    inst_codes = set(get_top_net_buy(INVESTORS['institution']))
+    common = sorted(foreign_codes & inst_codes)
+    if not common:
+        send_telegram("공통 순매수 종목이 없습니다.")
     else:
-        send_telegram(f"공통 종목: {', '.join(common)}")
-        start=(datetime.now()-relativedelta(months=6)).strftime('%Y-%m-%d')
-        for c in common:
-            df=fdr.DataReader(c,start);dfi=compute_indicators(df);sigs=compute_signals(dfi)
-            if sigs: send_telegram(c,plot_signals(c,df,dfi,sigs))
-            else: send_telegram(f"{c}: 신호 없음.")
-
+        send_telegram(f"공통 순매수 종목: {', '.join(common)}")
+        start_date = (datetime.now() - relativedelta(months=6)).strftime('%Y-%m-%d')
+        for code in common:
+            df = fdr.DataReader(code, start_date)
+            dfi = compute_indicators(df)
+            sigs = compute_signals(dfi)
+            if sigs:
+                buf = plot_signals(code, df, dfi, sigs)
+                send_telegram(code, buf)
+            else:
+                send_telegram(f"{code}: 신호가 없습니다.")
