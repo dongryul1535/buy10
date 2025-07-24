@@ -18,10 +18,10 @@ FONT_PATH = 'fonts/NanumGothic.ttf'
 KIS_APP_KEY = os.getenv('KIS_APP_KEY')
 KIS_APP_SECRET = os.getenv('KIS_APP_SECRET')
 if SIMULATION:
-    KIS_BASE = 'https://sandbox-openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations'
+    KIS_BASE = 'https://sandbox-openapi.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations'
     KIS_ACCNO = os.getenv('KIS_SIM_ACCOUNT_NUMBER')
 else:
-    KIS_BASE = 'https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations'
+    KIS_BASE = 'https://openapi.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations'
     KIS_ACCNO = os.getenv('KIS_ACCOUNT_NUMBER')
 
 # 한글 폰트 설정
