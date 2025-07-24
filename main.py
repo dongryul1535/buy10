@@ -60,7 +60,13 @@ def get_common_net_buy(n=10):
         'MAX_CNT': n
     }
     try:
+        # 요청 및 응답 로깅 (디버깅용)
         r = requests.post(url, headers=headers, json=params, timeout=10)
+        print(f"Request URL: {r.request.method} {r.request.url}")
+        print(f"Request Body: {r.request.body}")
+        print(f"Response Code: {r.status_code}")
+        print(f"Response Text: {r.text}")
+        r.raise_for_status()(url, headers=headers, json=params, timeout=10)
         r.raise_for_status()
     except requests.RequestException as e:
         print(f"KIS API error (foreign-institution-total): {e}")
