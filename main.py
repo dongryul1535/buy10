@@ -49,11 +49,39 @@ def compute_signals(df_ind):
             sigs.append((date,'sell'))
     return sigs
 
-# 순매수 상위 종목 조회 (외국인/기관 공통 analysis endpoint)
-KIS_BASE_ANALYSIS = 'https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/analysis'
-ENDPOINTS = {'foreign': 'stock-foreign-net-trend', 'institution': 'stock-institution-net-trend'}
+# 공통 순매수 상위 종목 조회: foreign-institution-total endpoint 사용
+KIS_BASE_QUOT = 'https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations'
 
-def get_top_net_buy(inv_type, inv_code, n=10):
+# foreign-institution-total endpoint 호출 함수
+def get_common_net_buy(n=10):
+    """
+    외국인과 기관 순매수 상위 종목을 동시에 반환하는 API 호출
+    """
+    ep = 'foreign-institution-total'
+    url = f"{KIS_BASE_QUOT}/{ep}"
+    headers = {'Content-Type': 'application/json', 'appKey': KIS_APP_KEY, 'appSecret': KIS_APP_SECRET}
+    params = {
+        'CANO': KIS_ACCNO,
+        'INQR_DVSN': '2',
+        'INQR_DT': datetime.now().strftime('%Y%m%d'),
+        'MAX_CNT': n
+    }
+    try:
+        r = requests.get(url, headers=headers, params=params, timeout=10)
+        r.raise_for_status()
+    except requests.RequestException as e:
+        print(f"KIS API error (foreign-institution-total): {e}")
+        return []
+    try:
+        data = r.json()
+    except ValueError:
+        print(f"JSON decode error (foreign-institution-total): {r.text}")
+        return []
+    # 실제 응답 키 확인 필요: 예시로 'output2' 사용
+    items = data.get('output2') or data.get('output') or []
+    # 종목 코드 키 확인 필요: 예시로 'stck_shrn_iscd'
+    return [itm.get('stck_shrn_iscd') for itm in items if itm.get('stck_shrn_iscd')]
+(inv_type, inv_code, n=10):
     """
     analysis group의 종목별 순매수 추이 endpoint 호출
     inv_type: 'foreign' 또는 'institution'
