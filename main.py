@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+import urllib3
 
 # 환경 변수 및 설정
 SIMULATION = os.getenv('SIMULATION', 'false').lower() == 'true'
@@ -15,16 +16,15 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 FONT_PATH = 'fonts/NanumGothic.ttf'
 
 # KIS 인증 정보 (실계좌 / 모의계좌)
-import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
+KIS_APP_KEY = os.getenv('KIS_APP_KEY')
+KIS_APP_SECRET = os.getenv('KIS_APP_SECRET')
 if SIMULATION:
     # 모의투자용: HTTP + sandbox host and port
     KIS_BASE = 'http://sandbox-openapi.koreainvestment.com:29443/uapi/domestic-stock/v1/quotations'
     KIS_ACCNO = os.getenv('KIS_SIM_ACCOUNT_NUMBER')
 else:
-    KIS_BASE = 'https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations'
-    KIS_ACCNO = os.getenv('KIS_ACCOUNT_NUMBER')
+    # 실계좌용
     KIS_BASE = 'https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations'
     KIS_ACCNO = os.getenv('KIS_ACCOUNT_NUMBER')
 
@@ -72,7 +72,7 @@ def get_common_net_buy(n=10):
         'MAX_CNT': n
     }
     try:
-        # SSL 인증서 오류가 발생하는 모의투자환경을 위해 verify를 False로 설정
+        # 모의환경은 verify=False
         r = requests.get(url, headers=headers, params=params, timeout=10, verify=(not SIMULATION))
         r.raise_for_status()
     except requests.RequestException as e:
