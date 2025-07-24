@@ -25,3 +25,5 @@ jobs:
           KIS_ACCOUNT_NUMBER: ${{ secrets.KIS_ACCOUNT_NUMBER }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SIMULATION: 'true'
+          KIS_SIM_ACCOUNT_NUMBER: ${{ secrets.KIS_SIM_ACCOUNT_NUMBER }}
