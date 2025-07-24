@@ -24,8 +24,21 @@ if os.path.exists(FONT_PATH):
 # KIS API 기본 URL
 KIS_BASE = 'https://openapi.koreainvestment.com:9443/uapi'
 
-# 인증 토큰 발급
+# 인증 토큰 발급 (OAuth2 Client Credentials)
 def get_access_token():
+    # OAuth2 token endpoint: client_credentials grant
+    url = 'https://openapi.koreainvestment.com:9443/oauth2/tokenP'
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    data = {
+        'grant_type': 'client_credentials',
+        'appkey': KIS_APP_KEY,
+        'appsecret': KIS_APP_SECRET
+    }
+    resp = requests.post(url, headers=headers, data=data)
+    if resp.status_code != 200:
+        raise Exception(f"Token request failed: {resp.status_code} {resp.text}")
+    token_data = resp.json()
+    return token_data.get('access_token') or token_data.get('accessToken')
     url = f"{KIS_BASE}/authentication-token"
     headers = {'Content-Type': 'application/json', 'appKey': KIS_APP_KEY, 'appSecret': KIS_APP_SECRET}
     resp = requests.post(url, headers=headers)
