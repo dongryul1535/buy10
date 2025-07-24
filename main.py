@@ -57,6 +57,36 @@ def compute_signals(df):
             sigs.append((idx, 'sell'))
     return sigs
 
+# 외국인/기관 별도 순매수 상위 종목 조회 함수
+def get_top_net_buy(inv_type, n=10):
+    """
+    inv_type: 'foreign' or 'institution'
+    """
+    # 투자자 구분 코드
+    div_code = '1000' if inv_type=='foreign' else '2000'
+    url = f"{KIS_BASE}/investor-net"
+    headers = {
+        'Content-Type': 'application/json',
+        'appKey': KIS_APP_KEY,
+        'appSecret': KIS_APP_SECRET
+    }
+    params = {
+        'CANO': KIS_ACCNO,
+        'INQR_DVSN': '2',
+        'INQR_DT': datetime.now().strftime('%Y%m%d'),
+        'INVST_DIV_CODE': div_code,
+        'MAX_CNT': n
+    }
+    try:
+        r = requests.get(url, headers=headers, params=params, timeout=10, verify=(not SIMULATION))
+        r.raise_for_status()
+        data = r.json()
+        items = data.get('output2') or data.get('output') or []
+        return [itm.get('stck_shrn_iscd') for itm in items if itm.get('stck_shrn_iscd')]
+    except Exception as e:
+        print(f"Error in get_top_net_buy({inv_type}): {e}")
+        return []
+
 # 외국인/기관 공통 순매수 상위 종목 조회
 # foreign-institution-total 호출에 실패하면 외국인/기관 별도 조회 후 교집합으로 처리
 
