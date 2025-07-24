@@ -58,6 +58,8 @@ def compute_signals(df):
     return sigs
 
 # 외국인/기관 공통 순매수 상위 종목 조회
+# foreign-institution-total 호출에 실패하면 외국인/기관 별도 조회 후 교집합으로 처리
+
 def get_common_net_buy(n=10):
     url = f"{KIS_BASE}/foreign-institution-total"
     headers = {
@@ -71,20 +73,22 @@ def get_common_net_buy(n=10):
         'INQR_DT': datetime.now().strftime('%Y%m%d'),
         'MAX_CNT': n
     }
+    # 시도: foreign-institution-total
     try:
-        # 모의환경은 verify=False
         r = requests.get(url, headers=headers, params=params, timeout=10, verify=(not SIMULATION))
         r.raise_for_status()
-    except requests.RequestException as e:
-        print(f"KIS API error (foreign-institution-total): {e}")
-        return []
-    try:
         data = r.json()
-    except ValueError:
-        print(f"JSON decode error: {r.text}")
-        return []
-    items = data.get('output2') or data.get('output') or []
-    return [itm.get('stck_shrn_iscd') for itm in items if itm.get('stck_shrn_iscd')]
+        items = data.get('output2') or data.get('output') or []
+        codes = [itm.get('stck_shrn_iscd') for itm in items if itm.get('stck_shrn_iscd')]
+        if codes:
+            return codes
+    except Exception as e:
+        print(f"Primary API failed: {e}")
+    # Fallback: 외국인, 기관 별도 조회 후 교집합
+    print("Falling back to separate calls for foreign and institution orders")
+    foreign = get_top_net_buy('foreign', n)
+    institution = get_top_net_buy('institution', n)
+    return sorted(set(foreign) & set(institution))
 
 # 텔레그램 전송
 def send_telegram(text, buf=None):
