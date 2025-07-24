@@ -22,7 +22,16 @@ if os.path.exists(FONT_PATH):
     plt.rcParams['font.family'] = font_prop.get_name()
 
 # KIS API 기본 URL
-KIS_BASE_QUOT = 'https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations'
+KIS_BASE = 'https://openapi.koreainvestment.com:9443/uapi'
+
+# 인증 토큰 발급
+def get_access_token():
+    url = f"{KIS_BASE}/authentication-token"
+    headers = {'Content-Type': 'application/json', 'appKey': KIS_APP_KEY, 'appSecret': KIS_APP_SECRET}
+    resp = requests.post(url, headers=headers)
+    resp.raise_for_status()
+    data = resp.json()
+    return data.get('accessToken')
 
 # MACD+Stoch 합성 지표 계산
 def compute_indicators(df):
@@ -48,38 +57,26 @@ def compute_signals(df_ind):
             sigs.append((date, 'sell'))
     return sigs
 
-# 외국인/기관 공통 순매수 상위 종목 조회 함수
-def get_common_net_buy(n=10):
+# 외국인/기관 공통 순매수 종목 조회
+def get_common_net_buy(token, n=10):
     ep = 'foreign-institution-total'
-    url = f"{KIS_BASE_QUOT}/{ep}"
-    headers = {'Content-Type': 'application/json', 'appKey': KIS_APP_KEY, 'appSecret': KIS_APP_SECRET}
+    url = f"{KIS_BASE}/domestic-stock/v1/quotations/{ep}"
+    headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {token}'}
     params = {
         'CANO': KIS_ACCNO,
         'INQR_DVSN': '2',
         'INQR_DT': datetime.now().strftime('%Y%m%d'),
         'MAX_CNT': n
     }
-    try:
-        # 요청 및 응답 로깅 (디버깅용)
-        r = requests.post(url, headers=headers, json=params, timeout=10)
-        print(f"Request URL: {r.request.method} {r.request.url}")
-        print(f"Request Body: {r.request.body}")
-        print(f"Response Code: {r.status_code}")
-        print(f"Response Text: {r.text}")
-        r.raise_for_status()
-        r.raise_for_status()
-    except requests.RequestException as e:
-        print(f"KIS API error (foreign-institution-total): {e}")
+    resp = requests.get(url, headers=headers, params=params, timeout=10)
+    if resp.status_code != 200:
+        print(f"KIS API error ({ep}): {resp.status_code} {resp.text}")
         return []
-    try:
-        data = r.json()
-    except ValueError:
-        print(f"JSON decode error (foreign-institution-total): {r.text}")
-        return []
+    data = resp.json()
     items = data.get('output2') or data.get('output') or []
     return [itm.get('stck_shrn_iscd') for itm in items if itm.get('stck_shrn_iscd')]
 
-# 텔레그램 전송 함수
+# 텔레그램 전송
 def send_telegram(text, buf=None):
     bot = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
     if buf:
@@ -89,11 +86,10 @@ def send_telegram(text, buf=None):
     else:
         requests.post(bot + 'sendMessage', data={'chat_id': TELEGRAM_CHAT_ID, 'text': text})
 
-# 차트 생성 함수
+# 차트 생성
 def plot_signals(code, df, dfi, sigs):
     plt.style.use('dark_background')
     fig, axs = plt.subplots(2, 1, figsize=(8, 6), gridspec_kw={'height_ratios': [2, 1]})
-    # 가격 차트
     axs[0].plot(df.index, df['Close'], linewidth=1.2)
     for date, typ in sigs:
         price = df.loc[date, 'Close']
@@ -102,7 +98,6 @@ def plot_signals(code, df, dfi, sigs):
         axs[0].scatter(date, price, marker=marker, color=color)
     axs[0].set_title(f"{code} Price & Signals")
     axs[0].grid(True, linestyle='--', linewidth=0.5)
-    # Composite 지표 차트
     axs[1].plot(dfi.index, dfi['CompK'], label='CompK', linewidth=1)
     axs[1].plot(dfi.index, dfi['CompD'], label='CompD', linewidth=1)
     axs[1].legend(loc='upper left')
@@ -110,13 +105,13 @@ def plot_signals(code, df, dfi, sigs):
     plt.tight_layout()
     buf = io.BytesIO()
     plt.savefig(buf, format='png', dpi=150)
-    buf.seek(0)
-    plt.close(fig)
+    buf.seek(0); plt.close(fig)
     return buf
 
-# 메인 실행
+# Main Execution
 if __name__ == '__main__':
-    common = get_common_net_buy()
+    token = get_access_token()
+    common = get_common_net_buy(token)
     if not common:
         send_telegram("공통 순매수 종목이 없습니다.")
     else:
