@@ -1,5 +1,4 @@
-# main.py
-```python
+
 import os
 import io
 import requests
@@ -127,4 +126,4 @@ if __name__ == '__main__':
                 send_telegram(code, buf)
             else:
                 send_telegram(f"{code}: 신호가 없습니다.")
-```
+
