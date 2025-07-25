@@ -68,7 +68,7 @@ def get_aggregated_codes(max_cnt=10):
         'FID_DIV_CLS_CODE': '1',         # 0:수량, 1:금액
         'FID_RANK_SORT_CLS_CODE': '0',   # 0:순매수 상위, 1:순매도 상위
         'FID_ETC_CLS_CODE': '0',         # 0:전체, 1:외국인, 2:기관계, 3:기타
-        'FID_PERIOD_DIV_CODE': '2',      # 1:당일, 2:누적 (사내 규격)
+        'FID_PERIOD_DIV_CODE': '1',      # 1:당일, 2:누적 (사내 규격)
         'FID_ORG_ADJ_PRC': '0',          # 옵션 (0 기본)
         'FID_MAXCNT': str(max_cnt)
     }
@@ -77,33 +77,11 @@ def get_aggregated_codes(max_cnt=10):
         r.raise_for_status()
         data = r.json()
         items = data.get('output', []) or data.get('output2', [])
-        return [item['mksc_shrn_iscd'] for item in items]
-    except Exception as e:
-        print(f"Error fetching aggregated codes: {e}")
-        return [](max_cnt=10):
-    url = f"{KIS_BASE}/foreign-institution-total"
-    headers = {
-        'Content-Type': 'application/json',
-        'appKey': KIS_APP_KEY,
-        'appSecret': KIS_APP_SECRET
-    }
-    params = {
-        'CANO': KIS_ACCNO,
-        'INQR_DVSN': '2',
-        'INQR_DT': datetime.now().strftime('%Y%m%d'),
-        'MAX_CNT': max_cnt
-    }
-    try:
-        r = session.get(url, headers=headers, params=params, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        items = data.get('output2', [])
-        return [item['mksc_shrn_iscd'] for item in items]
-    except Exception as e:
+        return [item['mksc_shrn_iscd'] for item in items]    except Exception as e:
         print(f"Error fetching aggregated codes: {e}")
         return []
 
-# 지표 계산: MACD + Stochastic 합성
+# MACD+Stochastic 지표 계산
 def compute_indicators(df):
     exp12 = df['Close'].ewm(span=12).mean()
     exp26 = df['Close'].ewm(span=26).mean()
@@ -115,69 +93,75 @@ def compute_indicators(df):
     stoch_d = stoch_k.rolling(3).mean()
     return pd.DataFrame({'CompK': macd + stoch_k, 'CompD': signal + stoch_d}).dropna()
 
-# 신호 계산: 교차 시점
+# 매수/매도 신호 계산
 def compute_signals(ind):
-    ind_shift = ind.shift(1)
+    ind_prev = ind.shift(1)
     signals = []
-    for idx in ind.index[1:]:
-        if ind_shift.at[idx,'CompK'] < ind_shift.at[idx,'CompD'] and ind.at[idx,'CompK'] > ind.at[idx,'CompD']:
-            signals.append((idx,'buy'))
-        elif ind_shift.at[idx,'CompK'] > ind_shift.at[idx,'CompD'] and ind.at[idx,'CompK'] < ind.at[idx,'CompD']:
-            signals.append((idx,'sell'))
+    for date in ind.index[1:]:
+        prev_k, prev_d = ind_prev.at[date,'CompK'], ind_prev.at[date,'CompD']
+        cur_k, cur_d = ind.at[date,'CompK'], ind.at[date,'CompD']
+        if prev_k < prev_d and cur_k > cur_d:
+            signals.append((date, 'buy'))
+        elif prev_k > prev_d and cur_k < cur_d:
+            signals.append((date, 'sell'))
     return signals
 
-# 차트 생성 및 버퍼 반환
-def plot_signals(code, df, ind, sigs):
+# 차트 생성
+ def plot_signals(code, df, ind, signals):
     plt.style.use('dark_background')
-    fig, (ax1,ax2) = plt.subplots(2,1,figsize=(8,6), gridspec_kw={'height_ratios':[2,1]})
-    ax1.plot(df.index, df['Close'], lw=1.2)
-    for date,typ in sigs:
-        marker='^' if typ=='buy' else 'v'
-        color='lime' if typ=='buy' else 'red'
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6), gridspec_kw={'height_ratios': [2, 1]})
+    ax1.plot(df.index, df['Close'], linewidth=1.2)
+    for date, typ in signals:
+        marker = '^' if typ == 'buy' else 'v'
+        color = 'lime' if typ == 'buy' else 'red'
         ax1.scatter(date, df.at[date,'Close'], marker=marker, color=color)
     ax1.set_title(f"{code} Price & Signals")
-    ax1.grid(True,ls='--',lw=0.5)
-    ax2.plot(ind.index, ind['CompK'], lw=1, label='CompK')
-    ax2.plot(ind.index, ind['CompD'], lw=1, label='CompD')
+    ax1.grid(True, linestyle='--', linewidth=0.5)
+
+    ax2.plot(ind.index, ind['CompK'], label='CompK', linewidth=1)
+    ax2.plot(ind.index, ind['CompD'], label='CompD', linewidth=1)
     ax2.legend(loc='upper left')
-    ax2.grid(True,ls='--',lw=0.5)
+    ax2.grid(True, linestyle='--', linewidth=0.5)
+
     plt.tight_layout()
-    buf=io.BytesIO()
-    plt.savefig(buf,format='png',dpi=150)
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=150)
     buf.seek(0)
     plt.close(fig)
     return buf
 
 # 텔레그램 전송
-def send_telegram(text, buf=None):
-    url=f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
+ def send_telegram(text, buf=None):
+    bot_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
     try:
         if buf:
-            files={'photo':buf}
-            data={'chat_id':TELEGRAM_CHAT_ID,'caption':text}
-            session.post(url+'sendPhoto',data=data,files=files)
+            files = {'photo': buf}
+            data = {'chat_id': TELEGRAM_CHAT_ID, 'caption': text}
+            session.post(bot_url + 'sendPhoto', data=data, files=files)
         else:
-            session.post(url+'sendMessage',data={'chat_id':TELEGRAM_CHAT_ID,'text':text})
+            session.post(bot_url + 'sendMessage', data={'chat_id': TELEGRAM_CHAT_ID, 'text': text})
     except Exception as e:
         print(f"Telegram send error: {e}")
 
 # 메인 실행
-def main():
+ def main():
     codes = get_aggregated_codes(10)
     if not codes:
         send_telegram("공통 순매수 종목이 없습니다.")
         return
+    # 종목 리스트 전송
     send_telegram(f"Aggregated Codes: {', '.join(codes)}")
-    start = (datetime.now()-relativedelta(months=6)).strftime('%Y-%m-%d')
+    # 과거 6개월치 데이터로 차트 생성
+    start_date = (datetime.now() - relativedelta(months=6)).strftime('%Y-%m-%d')
     for code in codes:
-        df = fdr.DataReader(code, start)
+        df = fdr.DataReader(code, start_date)
         ind = compute_indicators(df)
         sigs = compute_signals(ind)
         if sigs:
             buf = plot_signals(code, df, ind, sigs)
             send_telegram(code, buf)
         else:
-            send_telegram(f"{code}: No signals.")
+            send_telegram(f"{code}: 신호 없음")
 
-if __name__=='__main__':
+if __name__ == '__main__':
     main()
