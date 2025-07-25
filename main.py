@@ -94,52 +94,6 @@ def fetch_top10_foreign() -> pd.DataFrame:
         df["외국인 순매수 거래대금"] = pd.to_numeric(df["외국인 순매수 거래대금"], errors="coerce")
     else:
         df["외국인 순매수 거래대금"] = pd.NA
-    return df.sort_values("외국인 순매수 거래대금", ascending=False).head(10)() -> pd.DataFrame:
-    """외국인 순매수 상위 10종목 반환"""
-    if not _access_token:
-        raise RuntimeError("auth()를 먼저 호출하세요.")
-    headers = {
-        "Content-Type":  "application/json; charset=UTF-8",
-        "Authorization": f"Bearer {_access_token}",
-        "appkey":        API_KEY,
-        "appsecret":     API_SECRET,
-        "tr_id":         TR_ID,
-        "custtype":      "P"
-    }
-    for attempt in range(1,4):
-        resp = requests.post(API_URL, headers=headers, json=PARAMS, timeout=10)
-        if resp.status_code == 200:
-            break
-        logging.warning(f"UAPI 요청 {attempt}회차 실패: {resp.status_code} {resp.text}")
-        time.sleep(1)
-    else:
-        logging.error("UAPI 모든 시도 실패")
-        return pd.DataFrame()
-
-    data = resp.json().get("output", {})
-    items = data.get("foreignInstitutionTotals") or data.get("foreignInstitutionTotalList") or []
-    if not items:
-        logging.warning(f"조회된 데이터 없음: {data}")
-        return pd.DataFrame()
-    df = pd.DataFrame(items)
-    # 컬럼명 존재 여부 확인
-    col_map = {
-        "mksc_shrn_iscd":    "종목코드",
-        "hts_kor_isnm":      "종목명",
-        "frgn_ntby_tr_pbmn": "외국인 순매수 거래대금"
-    }
-    # 실제 존재하는 key로 매핑
-    existing = {k: v for k,v in col_map.items() if k in df.columns}
-    if not existing:
-        logging.error(f"매핑 가능한 컬럼 없음: {df.columns.tolist()}")
-        return pd.DataFrame()
-    df = df.rename(columns=existing)
-    # 숫자형 변환
-    if "외국인 순매수 거래대금" in df.columns:
-        df["외국인 순매수 거래대금"] = pd.to_numeric(df["외국인 순매수 거래대금"], errors="coerce")
-    else:
-        df["외국인 순매수 거래대금"] = pd.NA
-    # 정렬 및 추출
     return df.sort_values("외국인 순매수 거래대금", ascending=False).head(10)("외국인 순매수 거래대금", ascending=False).head(10)
 
 # ──────────────────────────────────────────────────────────────────────────────
