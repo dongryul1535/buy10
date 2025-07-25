@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-main.py
 
 KIS OpenAPI 인증 + 외국인 순매수 상위 10종목 조회
 + FinanceDataReader로 6개월치 가격 데이터 조회
@@ -38,9 +34,28 @@ except ImportError:
     import pytz
     KST = pytz.timezone('Asia/Seoul')
 
-# ──────────────────────────────────────────────────────────────────────────────
-# 2) 외국인 매매종목가집계 조회 (GET 방식)
-# ──────────────────────────────────────────────────────────────────────────────
+# ──────────────── 1) KIS 인증 ────────────────
+API_KEY    = os.getenv("KIS_APP_KEY")
+API_SECRET = os.getenv("KIS_APP_SECRET")
+TOKEN_URL  = "https://openapi.koreainvestment.com:9443/oauth2/token"
+_access_token = None
+
+def auth():
+    global _access_token
+    if not API_KEY or not API_SECRET:
+        raise RuntimeError("환경변수 KIS_APP_KEY/KIS_APP_SECRET을 설정해주세요.")
+    data = {"grant_type": "client_credentials", "appkey": API_KEY, "appsecret": API_SECRET}
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    resp = requests.post(TOKEN_URL, data=data, headers=headers)
+    if resp.status_code != 200:
+        logging.error(f"토큰 발급 실패: {resp.status_code} {resp.text}")
+        resp.raise_for_status()
+    token = resp.json().get("access_token")
+    if not token:
+        raise RuntimeError(f"토큰 발급 오류: {resp.text}")
+    _access_token = token
+
+# ──────────────── 2) 외국인 매매종목가집계 조회 (GET 방식) ────────────────
 API_URL = (
     "https://openapi.koreainvestment.com:9443"
     "/uapi/domestic-stock/v1/quotations/foreign-institution-total"
@@ -94,11 +109,9 @@ def fetch_top10_foreign() -> pd.DataFrame:
         df["외국인 순매수 거래대금"] = pd.to_numeric(df["외국인 순매수 거래대금"], errors="coerce")
     else:
         df["외국인 순매수 거래대금"] = pd.NA
-    return df.sort_values("외국인 순매수 거래대금", ascending=False).head(10)("외국인 순매수 거래대금", ascending=False).head(10)
+    return df.sort_values("외국인 순매수 거래대금", ascending=False).head(10)
 
-# ──────────────────────────────────────────────────────────────────────────────
-# 3) Telegram 알림 함수
-# ──────────────────────────────────────────────────────────────────────────────
+# ──────────────── 3) Telegram 알림 함수 ────────────────
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT  = os.getenv("TELEGRAM_CHAT_ID")
 if not TELEGRAM_TOKEN or not TELEGRAM_CHAT:
@@ -116,9 +129,7 @@ def send_photo(img_bytes: bytes, caption: str = ""):
     resp = requests.post(SEND_PHOTO_URL, files=files, data=data)
     resp.raise_for_status()
 
-# ──────────────────────────────────────────────────────────────────────────────
-# 4) 분석 및 시그널 탐지
-# ──────────────────────────────────────────────────────────────────────────────
+# ──────────────── 4) 분석 및 시그널 탐지 ────────────────
 def analyze_symbol(code: str, name: str):
     now = datetime.now(KST)
     start = (now - relativedelta(months=6)).date()
@@ -160,15 +171,13 @@ def analyze_symbol(code: str, name: str):
         send_photo(buf.getvalue(), f"{name}({code}) - {signal}")
         send_message(f"{name}({code}): {signal} 신호 발생 ({start}~{end})")
 
-# ──────────────────────────────────────────────────────────────────────────────
-# 5) 메인 실행
-# ──────────────────────────────────────────────────────────────────────────────
+# ──────────────── 5) 메인 실행 ────────────────
 class KSTFormatter(logging.Formatter):
     def converter(self, timestamp):
         return datetime.fromtimestamp(timestamp, KST).timetuple()
 
 def main():
-        # KST 타임존 포매터 적용
+    # KST 타임존 포매터 적용
     handler = logging.StreamHandler()
     handler.setFormatter(KSTFormatter("%(asctime)s [%(levelname)s] %(message)s"))
     root = logging.getLogger()
