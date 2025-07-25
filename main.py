@@ -53,6 +53,7 @@ def get_access_token():
 AGG_PATH = 'foreign-institution-total'
 
 def get_aggregated_codes(max_cnt=10):
+    """국내기관·외국인 매매종목 가집계 API 호출 후 종목 코드 리스트 반환"""
     token = get_access_token()
     url = f"{KIS_BASE}/{AGG_PATH}"
     headers = {
@@ -62,14 +63,14 @@ def get_aggregated_codes(max_cnt=10):
         'appSecret': KIS_APP_SECRET
     }
     params = {
-        'FID_COND_MRKT_DIV_CODE': 'J',   # J: 전체, V: 기본값 (시장 구분)
-        'FID_COND_SCR_DIV_CODE': '16449',# 스크리닝 코드 (16449 기본)
-        'FID_INPUT_ISCD': '0000',        # 전종목
-        'FID_DIV_CLS_CODE': '1',         # 0:수량, 1:금액
-        'FID_RANK_SORT_CLS_CODE': '0',   # 0:순매수 상위, 1:순매도 상위
-        'FID_ETC_CLS_CODE': '0',         # 0:전체, 1:외국인, 2:기관계, 3:기타
-        'FID_PERIOD_DIV_CODE': '1',      # 1:당일, 2:누적 (사내 규격)
-        'FID_ORG_ADJ_PRC': '0',          # 옵션 (0 기본)
+        'FID_COND_MRKT_DIV_CODE': 'J',
+        'FID_COND_SCR_DIV_CODE': '16449',
+        'FID_INPUT_ISCD': '0000',
+        'FID_DIV_CLS_CODE': '1',
+        'FID_RANK_SORT_CLS_CODE': '0',
+        'FID_ETC_CLS_CODE': '0',
+        'FID_PERIOD_DIV_CODE': '1',
+        'FID_ORG_ADJ_PRC': '0',
         'FID_MAXCNT': str(max_cnt)
     }
     try:
@@ -77,7 +78,8 @@ def get_aggregated_codes(max_cnt=10):
         r.raise_for_status()
         data = r.json()
         items = data.get('output', []) or data.get('output2', [])
-        return [item['mksc_shrn_iscd'] for item in items]    except Exception as e:
+        return [item['mksc_shrn_iscd'] for item in items]
+    except Exception as e:
         print(f"Error fetching aggregated codes: {e}")
         return []
 
