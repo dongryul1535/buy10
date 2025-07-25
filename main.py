@@ -7,6 +7,7 @@ KIS OpenAPI 인증 + 외국인 순매수 상위 10종목 조회
 + FinanceDataReader로 6개월치 가격 데이터 조회
 + NH MTS 스타일 Composite MACD+Stochastic 차트 작성
 + Golden/Dead Cross 감지 시 Telegram 알림
++ 모든 날짜 연산을 한국 표준시(Asia/Seoul) 기준으로 처리
 
 환경변수:
   KIS_APP_KEY, KIS_APP_SECRET
@@ -24,11 +25,19 @@ import io
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
+# 타임존 처리 (Python 3.9+ zoneinfo 또는 pytz)
+try:
+    from zoneinfo import ZoneInfo
+    KST = ZoneInfo('Asia/Seoul')
+except ImportError:
+    import pytz
+    KST = pytz.timezone('Asia/Seoul')
+
 # ──────────────────────────────────────────────────────────────────────────────
 # 1) KIS OpenAPI 인증
 # ──────────────────────────────────────────────────────────────────────────────
-API_KEY    = os.getenv("KIS_APP_KEY")  # 발급받은 앱키
-API_SECRET = os.getenv("KIS_APP_SECRET")  # 발급받은 앱시크릿
+API_KEY    = os.getenv("KIS_APP_KEY")
+API_SECRET = os.getenv("KIS_APP_SECRET")
 TOKEN_URL  = "https://openapi.koreainvestment.com:9443/oauth2/token"
 _access_token = None
 
@@ -88,8 +97,8 @@ def fetch_top10_foreign() -> pd.DataFrame:
         logging.error("UAPI 모든 시도 실패, 빈 DataFrame 반환")
         return pd.DataFrame()
 
-    data = resp.json()
-    items = data.get("output", {}).get("foreignInstitutionTotals", [])
+    body = resp.json()
+    items = body.get("output", {}).get("foreignInstitutionTotals", [])
     df = pd.DataFrame(items)
     if df.empty:
         logging.warning("조회된 데이터가 없습니다.")
@@ -128,11 +137,12 @@ def send_photo(image_bytes: bytes, caption: str = ""):
 
 def analyze_symbol(code: str, name: str):
     """6개월 가격으로 Composite MACD+Stochastic 교차 시그널 알림"""
-    end_date = datetime.today().date()
-    start_date = end_date - relativedelta(months=6)
+    now = datetime.now(KST)
+    end_date = now.date()
+    start_date = (now - relativedelta(months=6)).date()
     df = fdr.DataReader(code, start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
     if df.empty:
-        logging.warning(f"{code}({name}) 데이터 조회 실패")
+        logging.warning(f"{code}({name}) 데이터 조회 실패 ({start_date}~{end_date})")
         return
     # MACD
     ema_fast = df["Close"].ewm(span=12, adjust=False).mean()
@@ -161,14 +171,14 @@ def analyze_symbol(code: str, name: str):
         plt.figure(figsize=(10, 6))
         plt.plot(df.index, comp_k, label="Composite K")
         plt.plot(df.index, comp_d, label="Composite D")
-        plt.title(f"{name}({code}) Composite MACD+Stoch")
+        plt.title(f"{name}({code}) Composite MACD+Stoch ({start_date}~{end_date})")
         plt.legend()
         plt.tight_layout()
         buf = io.BytesIO()
         plt.savefig(buf, format="png")
         buf.seek(0)
         plt.close()
-        caption = f"{name}({code}) - {signal} 신호 발생"
+        caption = f"{name}({code}) - {signal} 신호 발생 (기간: {start_date}~{end_date})"
         send_photo(buf.getvalue(), caption)
         send_message(f"{name}({code}): {signal} 신호를 전송했습니다.")
 
@@ -177,18 +187,4 @@ def analyze_symbol(code: str, name: str):
 # ──────────────────────────────────────────────────────────────────────────────
 
 def main():
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-    logging.info("1) KIS API 인증 시작")
-    auth()
-    logging.info("2) KIS API 인증 완료")
-    top10 = fetch_top10_foreign()
-    if top10.empty:
-        logging.error("상위 종목 조회 실패, 프로그램 종료")
-        return
-    print("\n=== 외국인 순매수 거래대금 상위 10종목 ===\n")
-    print(top10[["종목코드", "종목명", "외국인 순매수 거래대금"]])
-    for _, row in top10.iterrows():
-        analyze_symbol(row["종목코드"], row["종목명"])
-
-if __name__ == "__main__":
-    main()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(
