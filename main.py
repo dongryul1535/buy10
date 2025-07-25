@@ -12,6 +12,7 @@ KIS OpenAPI 인증 + 외국인 순매수 상위 10종목 조회
 환경변수:
   KIS_APP_KEY, KIS_APP_SECRET
   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+  FONT_PATH: fonts/NanumGothic.ttf (선택, 한글 폰트)
 
 필수 패키지:
   requests, pandas, FinanceDataReader, matplotlib, python-dateutil
@@ -31,12 +32,14 @@ import numpy as np
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
-# 한글 폰트: 기본 sans-serif만 사용 (빠름)
-from matplotlib import rc
-import warnings
-warnings.filterwarnings("ignore", category=UserWarning, module="matplotlib.font_manager")
-plt.rc('font', family='sans-serif')
-fontprop = None
+# 한글 폰트 적용
+font_path = os.getenv("FONT_PATH", "fonts/NanumGothic.ttf")
+from matplotlib import font_manager, rc
+if os.path.exists(font_path):
+    fontprop = font_manager.FontProperties(fname=font_path)
+    plt.rc('font', family=fontprop.get_name())
+else:
+    fontprop = None  # fallback
 
 # 타임존 처리
 try:
@@ -197,53 +200,21 @@ def analyze_symbol(code: str, name: str, trading_value: float = None):
 
     df = add_composites(df)
 
-    # 매수/매도 시그널 탐지 (전 구간)
-    signals = []
-    if len(df) >= 2:
-        for i in range(1, len(df)):
-            prev_diff, curr_diff = df['Diff'].iloc[i-1], df['Diff'].iloc[i]
-            prev_k = df['CompK'].iloc[i-1]
-            signal = None
-            if prev_diff <= 0 < curr_diff:
-                signal = "BUY" if prev_k < 20 else "BUY_W"
-            elif prev_diff >= 0 > curr_diff:
-                signal = "SELL" if prev_k > 80 else "SELL_W"
-            if signal:
-                signals.append((df.index[i], signal, df['CompK'].iloc[i], df['CompD'].iloc[i]))
-
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10,8), sharex=True, gridspec_kw={'height_ratios':[2,1]})
     ax1.plot(df.index, df["Close"], label="종가")
     ax1.plot(df.index, df["MA20"], label="MA20", linestyle="--")
-    ax1.set_title(f"{code}.KS ({name})")
-    ax1.legend(loc="best")
+    ax1.set_title(f"{code}.KS ({name})", fontproperties=fontprop)
+    ax1.legend(loc="best", prop=fontprop)
     ax1.grid(True)
-
-    # 매수/매도 신호 (종가 그래프에 화살표)
-    for idx, signal, k, d in signals:
-        if "BUY" in signal:
-            ax1.annotate('▲', (idx, df["Close"].loc[idx]), color='red', fontsize=14,
-                         ha='center', va='bottom', fontweight='bold')
-            ax1.text(idx, df["Close"].loc[idx], signal, color='red', fontsize=8, ha='center', va='top')
-        elif "SELL" in signal:
-            ax1.annotate('▼', (idx, df["Close"].loc[idx]), color='blue', fontsize=14,
-                         ha='center', va='top', fontweight='bold')
-            ax1.text(idx, df["Close"].loc[idx], signal, color='blue', fontsize=8, ha='center', va='bottom')
 
     ax2.plot(df.index, df["CompK"], color="red", label="MACD+Slow%K")
     ax2.plot(df.index, df["CompD"], color="purple", label="MACD+Slow%D")
     ax2.axhline(20, color="gray", linestyle="--", linewidth=0.5)
     ax2.axhline(80, color="gray", linestyle="--", linewidth=0.5)
     ax2.set_ylim(0, 100)
-    ax2.set_title("MACD+Stochastic (NH Style)")
-    ax2.legend(loc="best")
+    ax2.set_title("MACD+Stochastic (NH Style)", fontproperties=fontprop)
+    ax2.legend(loc="best", prop=fontprop)
     ax2.grid(True)
-
-    # 보조지표 신호표시 (CompK/CompD 크로스점에 마커)
-    for idx, signal, k, d in signals:
-        if "BUY" in signal:
-            ax2.plot(idx, k, marker='^', color='red', markersize=12)
-        elif "SELL" in signal:
-            ax2.plot(idx, k, marker='v', color='blue', markersize=12)
 
     plt.tight_layout()
     buf = io.BytesIO()
@@ -251,8 +222,14 @@ def analyze_symbol(code: str, name: str, trading_value: float = None):
     buf.seek(0)
     plt.close()
 
-    # 최근 신호 메시지(마지막 신호)
-    signal = signals[-1][1] if signals else None
+    signal = None
+    if len(df) >= 2:
+        prev_diff, curr_diff = df['Diff'].iloc[-2], df['Diff'].iloc[-1]
+        prev_k = df['CompK'].iloc[-2]
+        if prev_diff <= 0 < curr_diff:
+            signal = "BUY" if prev_k < 20 else "BUY_W"
+        elif prev_diff >= 0 > curr_diff:
+            signal = "SELL" if prev_k > 80 else "SELL_W"
 
     trading_value_str = f"{trading_value:,}" if trading_value is not None else "-"
     msg = (
@@ -264,6 +241,7 @@ def analyze_symbol(code: str, name: str, trading_value: float = None):
         msg += f"시그널: {signal}"
 
     send_photo(buf.getvalue(), caption=msg)
+    # send_message(msg)  # <--- 이 줄 제거!
 
 # 5) 메인 실행
 class KSTFormatter(logging.Formatter):
