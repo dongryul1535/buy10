@@ -14,6 +14,7 @@ KIS OpenAPI 인증 + 외국인 순매수 상위 10종목 조회
 """
 
 import os
+import time
 import logging
 import requests
 import pandas as pd
@@ -51,10 +52,10 @@ def auth():
 def get_headers():
     if not _access_token:
         raise RuntimeError("토큰이 없습니다. 먼저 auth() 를 호출하세요.")
-    return {"Authorization": f"Bearer {_access_token}", "Content-Type": "application/json"}
+    return {"Authorization": f"Bearer {_access_token}"}
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 2) 외국인 매매종목가집계 호출 및 데이터 처리 (POST 방식)
+# 2) 외국인 매매종목가집계 호출 및 데이터 처리
 # ──────────────────────────────────────────────────────────────────────────────
 API_URL = "https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations/foreign-institution-total"
 PARAMS = dict(
@@ -68,14 +69,21 @@ PARAMS = dict(
 
 def fetch_top10_foreign():
     headers = get_headers().copy()
-    # UAPI requires form-encoded POST body
+    # form-encoded POST 요청
     headers['Content-Type'] = 'application/x-www-form-urlencoded'
-    try:
-        resp = requests.post(API_URL, headers=headers, data=PARAMS, timeout=10)
-        resp.raise_for_status()
-    except Exception as e:
-        logging.error(f"외국인 매매종목가집계 요청 실패: {e}")
-        raise
+    # 최대 3회 재시도
+    for attempt in range(1, 4):
+        try:
+            resp = requests.post(API_URL, headers=headers, data=PARAMS, timeout=10)
+            resp.raise_for_status()
+            break
+        except Exception as e:
+            logging.warning(f"외국인 매매종목가집계 요청 {attempt}회차 실패: {e}")
+            if attempt < 3:
+                time.sleep(1)
+            else:
+                logging.error("외국인 매매종목가집계 모든 시도 실패, 빈 데이터 반환")
+                return pd.DataFrame()
 
     body = resp.json()
     items = body.get("output", {}).get("foreignInstitutionTotals", [])
@@ -84,30 +92,28 @@ def fetch_top10_foreign():
         logging.warning("조회된 데이터가 없습니다.")
         return df
 
-    # 컬럼명 매핑
+    # 컬럼명 매핑 및 정렬
     df = df.rename(columns={
         'mksc_shrn_iscd': '종목코드',
         'hts_kor_isnm': '종목명',
         'frgn_ntby_tr_pbmn': '외국인 순매수 거래대금'
     })
     df['외국인 순매수 거래대금'] = pd.to_numeric(df['외국인 순매수 거래대금'], errors='coerce')
-    return df.sort_values('외국인 순매수 거래대금', ascending=False).head(10).reset_index(drop=True)
+    return df.sort_values('외국인 순매수 거래대금', ascending=False)
+
 # ──────────────────────────────────────────────────────────────────────────────
 # 3) Telegram 알림 함수
 # ──────────────────────────────────────────────────────────────────────────────
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
 if not TOKEN or not CHAT_ID:
     raise RuntimeError("환경변수 TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID 을 설정해주세요.")
-
 TELEGRAM_SENDMSG = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 TELEGRAM_SENDPHOTO = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
 
 def send_message(text: str):
     resp = requests.post(TELEGRAM_SENDMSG, data={"chat_id": CHAT_ID, "text": text})
     resp.raise_for_status()
-
 
 def send_photo(image_bytes: bytes, caption: str = None):
     files = {"photo": ("chart.png", image_bytes)}
@@ -120,7 +126,6 @@ def send_photo(image_bytes: bytes, caption: str = None):
 # ──────────────────────────────────────────────────────────────────────────────
 # 4) 지표 계산 및 신호 탐지
 # ──────────────────────────────────────────────────────────────────────────────
-
 def analyze_symbol(code: str, name: str):
     end = datetime.today().date()
     start = end - relativedelta(months=6)
@@ -128,24 +133,16 @@ def analyze_symbol(code: str, name: str):
     if df.empty:
         logging.warning(f"{code}({name}) 데이터 조회 실패")
         return
-
-    # MACD
     ema_fast = df['Close'].ewm(span=12, adjust=False).mean()
     ema_slow = df['Close'].ewm(span=26, adjust=False).mean()
     macd = ema_fast - ema_slow
     macd_signal = macd.ewm(span=9, adjust=False).mean()
-    
-    # Stochastic
-    low14 = df['Low'].rolling(window=14).min()
-    high14 = df['High'].rolling(window=14).max()
+    low14 = df['Low'].rolling(14).min()
+    high14 = df['High'].rolling(14).max()
     stoch_k = (df['Close'] - low14) / (high14 - low14) * 100
-    stoch_d = stoch_k.rolling(window=3).mean()
-
-    # Composite
+    stoch_d = stoch_k.rolling(3).mean()
     comp_k = macd + stoch_k
     comp_d = macd_signal + stoch_d
-
-    # 신호 탐지
     if len(comp_k) < 2:
         return
     prev_k, prev_d = comp_k.iloc[-2], comp_d.iloc[-2]
@@ -157,8 +154,6 @@ def analyze_symbol(code: str, name: str):
         signal = 'SELL'
     if not signal:
         return
-
-    # 차트 생성
     plt.figure(figsize=(10, 6))
     plt.plot(df.index, comp_k, label='Composite K')
     plt.plot(df.index, comp_d, label='Composite D')
@@ -169,8 +164,6 @@ def analyze_symbol(code: str, name: str):
     plt.savefig(buf, format='png')
     buf.seek(0)
     plt.close()
-
-    # Telegram 전송
     caption = f"{name}({code}) - {signal} 신호 발생"
     send_photo(buf.getvalue(), caption=caption)
     send_message(f"{name}({code}): {signal} 신호를 전송했습니다.")
@@ -178,19 +171,19 @@ def analyze_symbol(code: str, name: str):
 # ──────────────────────────────────────────────────────────────────────────────
 # 5) 메인 흐름
 # ──────────────────────────────────────────────────────────────────────────────
-
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     logging.info("1) KIS API 인증 시작")
     auth()
     logging.info("2) KIS API 인증 완료")
     top10 = fetch_top10_foreign()
-
+    if top10.empty:
+        logging.error("상위 종목 조회 실패로 종료합니다.")
+        return
     print("\n=== 외국인 순매수 거래대금 상위 10종목 ===\n")
-    print(top10[['종목코드', '종목명', '외국인 순매수 거래대금']])
-
-    for _, row in top10.iterrows():
+    print(top10[['종목코드','hts_kor_isnm','외국인 순매수 거래대금']])
+    for _, row in top10.head(10).iterrows():
         analyze_symbol(row['종목코드'], row['종목명'])
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     main()
