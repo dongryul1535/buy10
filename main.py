@@ -35,6 +35,7 @@ if os.path.exists(FONT_PATH):
 # OAuth2 토큰 발급 함수
 OAUTH_URL = 'https://openapi.koreainvestment.com:9443/oauth2/token'
 def get_access_token():
+    """클라이언트 자격 증명 방식으로 액세스 토큰을 발급받습니다."""
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
     data = {
         'grant_type': 'client_credentials',
@@ -69,17 +70,12 @@ def get_aggregated_codes(max_cnt=10):
         'FID_ETC_CLS_CODE': '0'           # 0:전체,1:외국인,2:기관계,3:기타
     }
     try:
-        # 집계 API는 POST 방식으로 호출해야 합니다
+        # 집계 API는 POST 방식으로 호출합니다
         resp = session.post(url, headers=headers, json=payload, timeout=10)
-        resp.raise_for_status()
-        resp = session.get(url, headers=headers, params=params, timeout=10)
         resp.raise_for_status()
         data = resp.json()
         items = data.get('output', []) or data.get('output2', [])
         return [itm['mksc_shrn_iscd'] for itm in items]
-    except Exception as e:
-        print(f"Error fetching aggregated codes: {e}")
-        return []
     except Exception as e:
         print(f"Error fetching aggregated codes: {e}")
         return []
