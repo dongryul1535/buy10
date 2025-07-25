@@ -15,7 +15,7 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 FONT_PATH = 'fonts/NanumGothic.ttf'
 
 # KIS API 설정
-KIS_BASE = 'https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations'
+KIS_BASE = 'https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations'   # 기본 엔드포인트로 수정
 KIS_APP_KEY = os.getenv('KIS_APP_KEY')
 KIS_APP_SECRET = os.getenv('KIS_APP_SECRET')
 KIS_ACCNO = os.getenv('KIS_ACCOUNT_NUMBER')
@@ -109,7 +109,7 @@ def compute_signals(ind):
     return signals
 
 # 차트 생성
- def plot_signals(code, df, ind, signals):
+def plot_signals(code, df, ind, signals):
     plt.style.use('dark_background')
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6), gridspec_kw={'height_ratios': [2, 1]})
     ax1.plot(df.index, df['Close'], linewidth=1.2)
@@ -133,7 +133,7 @@ def compute_signals(ind):
     return buf
 
 # 텔레그램 전송
- def send_telegram(text, buf=None):
+def send_telegram(text, buf=None):
     bot_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
     try:
         if buf:
@@ -146,7 +146,7 @@ def compute_signals(ind):
         print(f"Telegram send error: {e}")
 
 # 메인 실행
- def main():
+def main():
     codes = get_aggregated_codes(10)
     if not codes:
         send_telegram("공통 순매수 종목이 없습니다.")
