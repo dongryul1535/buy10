@@ -1,3 +1,24 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+main.py
+
+KIS OpenAPI 인증 + 외국인 순매수 상위 10종목 조회
++ FinanceDataReader로 6개월치 가격 데이터 조회
++ NH MTS 스타일 Composite MACD+Stochastic 차트 작성
++ Golden/Dead Cross 감지 시 Telegram 알림
++ 모든 날짜 연산을 한국 표준시(Asia/Seoul) 기준으로 처리
+
+환경변수:
+  KIS_APP_KEY, KIS_APP_SECRET
+  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+
+필수 패키지:
+  requests, pandas, FinanceDataReader, matplotlib, python-dateutil
+선택 패키지 (타임존 처리):
+  pytz (Python <3.9 환경에서 필요한 경우)
+"""
+
 import os
 import time
 import logging
@@ -43,7 +64,7 @@ API_URL = (
     "https://openapi.koreainvestment.com:9443"
     "/uapi/domestic-stock/v1/quotations/foreign-institution-total"
 )
-TR_ID   = "FHPTJ04400000"  # ← 이 부분만 수정!
+TR_ID   = "FHPTJ04400000"  # ← tr_id 최신값!
 PARAMS = {
     "fid_cond_mrkt_div_code":    "V",
     "fid_cond_scr_div_code":     "16449",
@@ -66,7 +87,7 @@ def fetch_top10_foreign() -> pd.DataFrame:
     }
     for attempt in range(1, 4):
         resp = requests.get(API_URL, headers=headers, params=PARAMS, timeout=10)
-        print(resp.text)  # ← 디버깅을 위해 응답 전문 출력
+        print(resp.text)  # 응답 전문 출력(디버깅)
         if resp.status_code == 200:
             break
         logging.warning(f"UAPI GET {attempt}회차 실패: {resp.status_code} {resp.text}")
@@ -75,13 +96,12 @@ def fetch_top10_foreign() -> pd.DataFrame:
         logging.error("UAPI 모든 시도 실패")
         return pd.DataFrame()
 
-    payload = resp.json().get("output", {})
-    items = payload.get("foreignInstitutionTotals") or payload.get("foreignInstitutionTotalList") or []
-    if not items:
+    # output이 바로 리스트임!
+    payload = resp.json().get("output", [])
+    if not payload or not isinstance(payload, list):
         logging.warning(f"조회 결과 없음: {payload}")
         return pd.DataFrame()
-
-    df = pd.DataFrame(items)
+    df = pd.DataFrame(payload)
     col_map = {
         "mksc_shrn_iscd":    "종목코드",
         "hts_kor_isnm":      "종목명",
