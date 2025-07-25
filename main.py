@@ -229,3 +229,52 @@ def analyze_symbol(code: str, name: str, trading_value: float = None):
     plt.close()
 
     signal = None
+    if len(df) >= 2:
+        prev_diff, curr_diff = df['Diff'].iloc[-2], df['Diff'].iloc[-1]
+        prev_k = df['CompK'].iloc[-2]
+        if prev_diff <= 0 < curr_diff:
+            signal = "BUY" if prev_k < 20 else "BUY_W"
+        elif prev_diff >= 0 > curr_diff:
+            signal = "SELL" if prev_k > 80 else "SELL_W"
+
+    trading_value_str = f"{trading_value:,}" if trading_value is not None else "-"
+    msg = (
+        f"{name} ({code})\n"
+        f"외국인 순매수 거래대금: {trading_value_str}백만원\n"
+        f"현재가: {today_close:,.0f}원 ({change:+,.0f} / {change_rate:+.2f}%)\n"
+    )
+    if signal:
+        msg += f"시그널: {signal}"
+
+    send_photo(buf.getvalue(), caption=msg)
+    # send_message(msg)  # <--- 이 줄 제거!
+
+# 5) 메인 실행
+class KSTFormatter(logging.Formatter):
+    def converter(self, timestamp):
+        return datetime.fromtimestamp(timestamp, KST).timetuple()
+
+def main():
+    handler = logging.StreamHandler()
+    handler.setFormatter(KSTFormatter("%(asctime)s [%(levelname)s] %(message)s"))
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.handlers = [handler]
+    logging.info("1) KIS API 인증 시작")
+    auth()
+    logging.info("2) KIS API 인증 완료")
+    top10 = fetch_top10_foreign()
+    if top10.empty:
+        logging.error("상위 종목 조회 실패, 프로그램 종료")
+        return
+    print("\n=== 외국인 순매수 거래대금 상위 10종목 ===\n")
+    print(top10[["종목코드","종목명","외국인 순매수 거래대금"]])
+    for _, row in top10.iterrows():
+        analyze_symbol(
+            row["종목코드"],
+            row["종목명"],
+            row.get("외국인 순매수 거래대금")
+        )
+
+if __name__ == "__main__":
+    main()
