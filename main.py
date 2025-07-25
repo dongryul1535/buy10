@@ -54,23 +54,27 @@ def get_headers():
     return {"Authorization": f"Bearer {_access_token}", "Content-Type": "application/json"}
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 2) 외국인 매매종목가집계 조회
+# 2) 외국인 매매종목가집계 호출 및 데이터 처리 (POST 방식)
 # ──────────────────────────────────────────────────────────────────────────────
 API_URL = "https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations/foreign-institution-total"
 PARAMS = dict(
-    fid_cond_mrkt_div_code="V",  # 전체
-    fid_cond_scr_div_code="16449",  # 전체
-    fid_input_iscd="0000",  # 전체
-    fid_div_cls_code="0",  # 전체
-    fid_rank_sort_cls_code="0",  # 거래대금 기준
-    fid_etc_cls_code="0"
+    fid_cond_mrkt_div_code="V",   # 전체
+    fid_cond_scr_div_code="16449", # 전체
+    fid_input_iscd="0000",         # 전체
+    fid_div_cls_code="0",          # 전체
+    fid_rank_sort_cls_code="0",    # 거래대금 기준
+    fid_etc_cls_code="0"           # 전체
 )
 
 def fetch_top10_foreign():
     headers = get_headers()
-    resp = requests.get(API_URL, headers=headers, params=PARAMS)
-    resp.raise_for_status()
+    # UAPI는 POST로 요청해야 합니다.
+    resp = requests.post(API_URL, headers=headers, json=PARAMS)
+    if resp.status_code != 200:
+        logging.error(f"외국인 매매종목가집계 요청 실패 {resp.status_code}: {resp.text}")
+        resp.raise_for_status()
     body = resp.json()
+    # 실제 반환 구조에 맞춰 'output' 경로를 확인하세요.
     items = body.get("output", {}).get("foreignInstitutionTotals", [])
     df = pd.DataFrame(items)
     df = df.rename(columns={
@@ -107,11 +111,10 @@ def send_photo(image_bytes: bytes, caption: str = None):
     resp.raise_for_status()
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 4) 지표 계산 및 신호 탐지 함수
+# 4) 지표 계산 및 신호 탐지
 # ──────────────────────────────────────────────────────────────────────────────
 
 def analyze_symbol(code: str, name: str):
-    # 가격 조회: 6개월
     end = datetime.today().date()
     start = end - relativedelta(months=6)
     df = fdr.DataReader(code, start.strftime('%Y-%m-%d'), end.strftime('%Y-%m-%d'))
@@ -135,22 +138,20 @@ def analyze_symbol(code: str, name: str):
     comp_k = macd + stoch_k
     comp_d = macd_signal + stoch_d
 
-    # 신호 탐지 (마지막 두 일자)
+    # 신호 탐지
     if len(comp_k) < 2:
         return
     prev_k, prev_d = comp_k.iloc[-2], comp_d.iloc[-2]
     curr_k, curr_d = comp_k.iloc[-1], comp_d.iloc[-1]
-
     signal = None
     if prev_k < prev_d and curr_k > curr_d:
         signal = 'BUY'
     elif prev_k > prev_d and curr_k < curr_d:
         signal = 'SELL'
-
     if not signal:
         return
 
-    # 차트 그리기
+    # 차트 생성
     plt.figure(figsize=(10, 6))
     plt.plot(df.index, comp_k, label='Composite K')
     plt.plot(df.index, comp_d, label='Composite D')
@@ -165,7 +166,7 @@ def analyze_symbol(code: str, name: str):
     # Telegram 전송
     caption = f"{name}({code}) - {signal} 신호 발생"
     send_photo(buf.getvalue(), caption=caption)
-    send_message(f"{name}({code}): {signal} 신호를 보냈습니다.")
+    send_message(f"{name}({code}): {signal} 신호를 전송했습니다.")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 5) 메인 흐름
