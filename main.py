@@ -64,7 +64,7 @@ def get_aggregated_codes(max_cnt=10):
         'FID_COND_MRKT_DIV_CODE': 'V',    # 시장 구분 (V: Default)
         'FID_COND_SCR_DIV_CODE': '16449', # 스크리닝 코드
         'FID_INPUT_ISCD': '0000',         # 전체 종목
-        'FID_DIV_CLS_CODE': '1',          # 0:수량정렬, 1:금액정렬
+        'FID_DIV_CLS_CODE': '0',          # 0:수량정렬, 1:금액정렬
         'FID_RANK_SORT_CLS_CODE': '0',    # 0:순매수상위, 1:순매도상위
         'FID_ETC_CLS_CODE': '0'           # 0:전체,1:외국인,2:기관계,3:기타
     }
