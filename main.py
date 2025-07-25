@@ -68,15 +68,24 @@ PARAMS = dict(
 
 def fetch_top10_foreign():
     headers = get_headers()
-    # UAPI는 POST로 요청해야 합니다.
-    resp = requests.post(API_URL, headers=headers, json=PARAMS)
-    if resp.status_code != 200:
-        logging.error(f"외국인 매매종목가집계 요청 실패 {resp.status_code}: {resp.text}")
+    # UAPI는 POST로 요청해야 하나, 간혹 500 에러가 발생해 GET으로 재시도합니다.
+    try:
+        resp = requests.post(API_URL, headers=headers, json=PARAMS, timeout=10)
         resp.raise_for_status()
+    except Exception as e:
+        logging.warning(f"POST 요청 실패({e}), GET으로 재시도합니다.")
+        resp = requests.get(API_URL, headers=headers, params=PARAMS, timeout=10)
+        resp.raise_for_status()
+
     body = resp.json()
-    # 실제 반환 구조에 맞춰 'output' 경로를 확인하세요.
+    # 출력 경로 확인: UAPI에서는 'output' 하위에 데이터가 있습니다.
     items = body.get("output", {}).get("foreignInstitutionTotals", [])
     df = pd.DataFrame(items)
+    if df.empty:
+        logging.warning("조회된 데이터가 없습니다.")
+        return df
+
+    # 컬럼명 매핑
     df = df.rename(columns={
         'mksc_shrn_iscd': '종목코드',
         'hts_kor_isnm': '종목명',
@@ -84,7 +93,6 @@ def fetch_top10_foreign():
     })
     df['외국인 순매수 거래대금'] = pd.to_numeric(df['외국인 순매수 거래대금'], errors='coerce')
     return df.sort_values('외국인 순매수 거래대금', ascending=False).head(10).reset_index(drop=True)
-
 # ──────────────────────────────────────────────────────────────────────────────
 # 3) Telegram 알림 함수
 # ──────────────────────────────────────────────────────────────────────────────
