@@ -81,16 +81,35 @@ def get_top_net_buy(inv_div_code, count=10):
         r.raise_for_status()
         data = r.json()
         items = data.get('output2', [])
-        return [item['stck_shrn_iscd'] for item in items]
+        return [item['mksc_shrn_iscd'] for item in items]
     except Exception as e:
         print(f"Error fetching {INVESTOR_NET_PATH} ({inv_div_code}): {e}")
         return []
 
-# 외국인/기관 교집합 종목
+# 외국인·기관 동시 순매수 종목 조회 (aggregated endpoint)
+COMMON_NET_PATH = os.getenv('COMMON_NET_PATH', 'foreign-institution-total')  # '/uapi/.../foreign-institution-total'의 마지막 슬러그
+
 def get_common_net_buy(count=10):
-    foreign = get_top_net_buy('1000', count)
-    institution = get_top_net_buy('2000', count)
-    return sorted(set(foreign) & set(institution))
+    url = f"{KIS_BASE}/{COMMON_NET_PATH}"
+    headers = {'Content-Type': 'application/json', 'appKey': KIS_APP_KEY, 'appSecret': KIS_APP_SECRET}
+    params = {
+        'CANO': KIS_ACCNO,
+        'INQR_DVSN': '2',
+        'INQR_DT': datetime.now().strftime('%Y%m%d'),
+        'MAX_CNT': count
+    }
+    try:
+        r = session.get(url, headers=headers, params=params, timeout=10)
+        if r.status_code == 404:
+            print(f"Endpoint not found: {COMMON_NET_PATH} (404)")
+            return []
+        r.raise_for_status()
+        data = r.json()
+        items = data.get('output2', [])
+        return [item['mksc_shrn_iscd'] for item in items]
+    except Exception as e:
+        print(f"Error fetching {COMMON_NET_PATH}: {e}")
+        return []
 
 # 텔레그램 전송
 def send_telegram(message, buf=None):
