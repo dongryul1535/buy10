@@ -79,7 +79,7 @@ def get_top_net_buy(inv_type, n=10):
         print(f"Error in get_top_net_buy({inv_type}): {e}")
         return []
 
-# 공통 순매수 상위 종목 조회 (fallback 포함)
+# 공통 순매수 상위 종목 조회 (실전계좌 전용)
 def get_common_net_buy(n=10):
     url = f"{KIS_BASE}/foreign-institution-total"
     headers = {'Content-Type': 'application/json', 'appKey': KIS_APP_KEY, 'appSecret': KIS_APP_SECRET}
@@ -94,15 +94,10 @@ def get_common_net_buy(n=10):
         r.raise_for_status()
         data = r.json()
         items = data.get('output2') or data.get('output') or []
-        codes = [itm.get('stck_shrn_iscd') for itm in items if itm.get('stck_shrn_iscd')]
-        if codes:
-            return codes
+        return [itm.get('stck_shrn_iscd') for itm in items if itm.get('stck_shrn_iscd')]
     except Exception as e:
-        print(f"Primary API failed: {e}")
-    print("Falling back to separate calls for foreign and institution orders")
-    foreign = get_top_net_buy('foreign', n)
-    institution = get_top_net_buy('institution', n)
-    return sorted(set(foreign) & set(institution))
+        print(f"API error on foreign-institution-total: {e}")
+        return []
 
 # 텔레그램 전송 함수
 def send_telegram(text, buf=None):
