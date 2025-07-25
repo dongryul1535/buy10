@@ -2,7 +2,7 @@
 import os
 import io
 from datetime import datetime
-from dateutil.relatelta import relativedelta
+from dateutil.relativedelta import relativedelta
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -141,4 +141,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
+```
