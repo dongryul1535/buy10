@@ -55,6 +55,7 @@ def get_headers():
     return {"Authorization": f"Bearer {_access_token}"}
 
 # ──────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────
 # 2) 외국인 매매종목가집계 호출 및 데이터 처리
 # ──────────────────────────────────────────────────────────────────────────────
 API_URL = "https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations/foreign-institution-total"
@@ -67,7 +68,46 @@ PARAMS = dict(
     fid_etc_cls_code="0"           # 전체
 )
 
+# UAPI 호출 시 필수 헤더: tr_id (Transaction ID)
+TR_ID = "FHKSTA01400"
+
 def fetch_top10_foreign():
+    # 인증 헤더 + tr_id + content-type
+    headers = get_headers().copy()
+    headers.update({
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'tr_id': TR_ID
+    })
+    # 최대 3회 재시도
+    for attempt in range(1, 4):
+        try:
+            resp = requests.post(API_URL, headers=headers, data=PARAMS, timeout=10)
+            resp.raise_for_status()
+            break
+        except Exception as e:
+            logging.warning(f"UAPI({TR_ID}) 요청 {attempt}회차 실패: {e}")
+            if attempt < 3:
+                time.sleep(1)
+            else:
+                logging.error("UAPI 모든 시도 실패, 빈 데이터 반환")
+                return pd.DataFrame()
+
+    body = resp.json()
+    items = body.get("output", {}).get("foreignInstitutionTotals", [])
+    df = pd.DataFrame(items)
+    if df.empty:
+        logging.warning("조회된 데이터가 없습니다.")
+        return df
+
+    # 컬럼명 매핑 및 정렬
+    df = df.rename(columns={
+        'mksc_shrn_iscd': '종목코드',
+        'hts_kor_isnm': '종목명',
+        'frgn_ntby_tr_pbmn': '외국인 순매수 거래대금'
+    })
+    df['외국인 순매수 거래대금'] = pd.to_numeric(df['외국인 순매수 거래대금'], errors='coerce')
+    return df.sort_values('외국인 순매수 거래대금', ascending=False)
+():
     headers = get_headers().copy()
     # form-encoded POST 요청
     headers['Content-Type'] = 'application/x-www-form-urlencoded'
