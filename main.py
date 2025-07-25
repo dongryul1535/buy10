@@ -50,7 +50,7 @@ def get_access_token():
 
 # 국내기관·외국인 매매종목 가집계 조회
 AGG_PATH = 'foreign-institution-total'
-def get_aggregated_codes():
+def get_aggregated_codes(max_cnt=10):
     """국내기관·외국인 매매종목 가집계 API 호출 후 종목 코드 리스트 반환"""
     token = get_access_token()
     url = f"{KIS_BASE}/{AGG_PATH}"
