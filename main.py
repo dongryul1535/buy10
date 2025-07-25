@@ -101,15 +101,31 @@ def fetch_top10_foreign() -> pd.DataFrame:
         logging.error("UAPI 모든 시도 실패")
         return pd.DataFrame()
 
-    items = resp.json().get("output", {}).get("foreignInstitutionTotals", [])
+    data = resp.json().get("output", {})
+    items = data.get("foreignInstitutionTotals") or data.get("foreignInstitutionTotalList") or []
+    if not items:
+        logging.warning(f"조회된 데이터 없음: {data}")
+        return pd.DataFrame()
     df = pd.DataFrame(items)
-    df = df.rename(columns={
+    # 컬럼명 존재 여부 확인
+    col_map = {
         "mksc_shrn_iscd":    "종목코드",
         "hts_kor_isnm":      "종목명",
         "frgn_ntby_tr_pbmn": "외국인 순매수 거래대금"
-    })
-    df["외국인 순매수 거래대금"] = pd.to_numeric(df["외국인 순매수 거래대금"], errors="coerce")
-    return df.sort_values("외국인 순매수 거래대금", ascending=False).head(10)
+    }
+    # 실제 존재하는 key로 매핑
+    existing = {k: v for k,v in col_map.items() if k in df.columns}
+    if not existing:
+        logging.error(f"매핑 가능한 컬럼 없음: {df.columns.tolist()}")
+        return pd.DataFrame()
+    df = df.rename(columns=existing)
+    # 숫자형 변환
+    if "외국인 순매수 거래대금" in df.columns:
+        df["외국인 순매수 거래대금"] = pd.to_numeric(df["외국인 순매수 거래대금"], errors="coerce")
+    else:
+        df["외국인 순매수 거래대금"] = pd.NA
+    # 정렬 및 추출
+    return df.sort_values("외국인 순매수 거래대금", ascending=False).head(10)("외국인 순매수 거래대금", ascending=False).head(10)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 3) Telegram 알림 함수
