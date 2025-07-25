@@ -219,7 +219,7 @@ def main():
     handler.setFormatter(KSTFormatter("%(asctime)s [%(levelname)s] %(message)s"))
     root = logging.getLogger()
     root.setLevel(logging.INFO)
-    root.handlers = [handler]s [%(levelname)s] %(message)s")
+    root.handlers = [handler]
     logging.info("1) KIS API 인증 시작")
     auth()
     logging.info("2) KIS API 인증 완료")
