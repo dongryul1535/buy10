@@ -32,8 +32,55 @@ if os.path.exists(FONT_PATH):
     prop = fm.FontProperties(fname=FONT_PATH)
     plt.rcParams['font.family'] = prop.get_name()
 
-# 종목 코드 조회: 국내기관_외국인 매매종목가집계
+# OAuth2 Access Token 발급 (Client Credentials)
+OAUTH_URL = 'https://openapi.koreainvestment.com:9443/oauth2/tokenP'
+
+def get_access_token():
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    data = {
+        'grant_type': 'client_credentials',
+        'appkey': KIS_APP_KEY,
+        'appsecret': KIS_APP_SECRET
+    }
+    resp = session.post(OAUTH_URL, headers=headers, data=data)
+    resp.raise_for_status()
+    token_data = resp.json()
+    token = token_data.get('access_token') or token_data.get('accessToken')
+    print(f"DEBUG: access_token -> {token}")
+    return token
+
+# 종목 코드 조회: 국내기관·외국인 매매종목 가집계
+AGG_PATH = 'foreign-institution-total'
+
 def get_aggregated_codes(max_cnt=10):
+    token = get_access_token()
+    url = f"{KIS_BASE}/{AGG_PATH}"
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {token}',
+        'appKey': KIS_APP_KEY,
+        'appSecret': KIS_APP_SECRET
+    }
+    params = {
+        'FID_COND_MRKT_DIV_CODE': 'J',   # J: 전체, V: 기본값 (시장 구분)
+        'FID_COND_SCR_DIV_CODE': '16449',# 스크리닝 코드 (16449 기본)
+        'FID_INPUT_ISCD': '0000',        # 전종목
+        'FID_DIV_CLS_CODE': '1',         # 0:수량, 1:금액
+        'FID_RANK_SORT_CLS_CODE': '0',   # 0:순매수 상위, 1:순매도 상위
+        'FID_ETC_CLS_CODE': '0',         # 0:전체, 1:외국인, 2:기관계, 3:기타
+        'FID_PERIOD_DIV_CODE': '2',      # 1:당일, 2:누적 (사내 규격)
+        'FID_ORG_ADJ_PRC': '0',          # 옵션 (0 기본)
+        'FID_MAXCNT': str(max_cnt)
+    }
+    try:
+        r = session.get(url, headers=headers, params=params, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        items = data.get('output', []) or data.get('output2', [])
+        return [item['mksc_shrn_iscd'] for item in items]
+    except Exception as e:
+        print(f"Error fetching aggregated codes: {e}")
+        return [](max_cnt=10):
     url = f"{KIS_BASE}/foreign-institution-total"
     headers = {
         'Content-Type': 'application/json',
