@@ -57,32 +57,47 @@ def compute_signals(df):
             sigs.append((idx, 'sell'))
     return sigs
 
+# API 경로 환경 변수 (portal에서 정확한 Service Path 명칭을 설정)
+INVESTOR_NET_PATH = os.getenv('INVESTOR_NET_PATH', 'investor-net')  # 예: 'investor-net'
+COMMON_NET_PATH = os.getenv('COMMON_NET_PATH', 'foreign-institution-total')  # 예: 'foreign-institution-total'
+
 # 외국인/기관 별도 순매수 상위 종목 조회
-INVESTOR_NET_PATH = os.getenv('INVESTOR_NET_PATH', 'investor-net')  # API Portal에서 확인한 실제 경로로 변경 가능
 def get_top_net_buy(inv_type, n=10):
     div_code = '1000' if inv_type == 'foreign' else '2000'
-    url = f"{KIS_BASE}/{INVESTOR_NET_PATH}"
-    headers = {
-        'Content-Type': 'application/json',
-        'appKey': KIS_APP_KEY,
-        'appSecret': KIS_APP_SECRET
-    }
-    params = {
-        'CANO': KIS_ACCNO,
-        'INQR_DVSN': '2',
-        'INQR_DT': datetime.now().strftime('%Y%m%d'),
-        'INVST_DIV_CODE': div_code,
-        'MAX_CNT': n
-    }
+    url = f"{KIS_BASE}/{INVESTOR_NET_PATH}"  # 환경 변수로 경로 제어
+    headers = {'Content-Type': 'application/json', 'appKey': KIS_APP_KEY, 'appSecret': KIS_APP_SECRET}
+    params = {'CANO': KIS_ACCNO, 'INQR_DVSN': '2', 'INQR_DT': datetime.now().strftime('%Y%m%d'), 'INVST_DIV_CODE': div_code, 'MAX_CNT': n}
     try:
         r = session.get(url, headers=headers, params=params, timeout=10)
         if r.status_code == 404:
-            # 엔드포인트 경로가 다르다면 빈 리스트 반환
+            # 엔드포인트 경로 다를 수 있음
+            print(f"Endpoint not found: {INVESTOR_NET_PATH}")
             return []
         r.raise_for_status()
         data = r.json()
         items = data.get('output2') or data.get('output') or []
         return [itm.get('stck_shrn_iscd') for itm in items if itm.get('stck_shrn_iscd')]
+    except Exception as e:
+        print(f"Error in get_top_net_buy({inv_type}): {e}")
+        return []
+
+# 공통 순매수 상위 종목 조회 (외국인과 기관 교집합)
+def get_common_net_buy(n=10):
+    url = f"{KIS_BASE}/{COMMON_NET_PATH}"  # 환경 변수로 경로 제어
+    headers = {'Content-Type': 'application/json', 'appKey': KIS_APP_KEY, 'appSecret': KIS_APP_SECRET}
+    params = {'CANO': KIS_ACCNO, 'INQR_DVSN': '2', 'INQR_DT': datetime.now().strftime('%Y%m%d'), 'MAX_CNT': n}
+    try:
+        r = session.get(url, headers=headers, params=params, timeout=10)
+        if r.status_code == 404:
+            print(f"Endpoint not found: {COMMON_NET_PATH}")
+            return []
+        r.raise_for_status()
+        data = r.json()
+        items = data.get('output2') or data.get('output') or []
+        return [itm.get('stck_shrn_iscd') for itm in items if itm.get('stck_shrn_iscd')]
+    except Exception as e:
+        print(f"Error in get_common_net_buy: {e}")
+        return []('stck_shrn_iscd') for itm in items if itm.get('stck_shrn_iscd')]
     except Exception as e:
         print(f"Error in get_top_net_buy({inv_type}): {e}")
         return []
