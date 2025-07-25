@@ -60,7 +60,7 @@ def get_aggregated_codes(max_cnt=10):
         'appSecret': KIS_APP_SECRET,
         'Authorization': f'Bearer {token}'
     }
-    params = {
+    payload = {
         'FID_COND_MRKT_DIV_CODE': 'V',    # 시장 구분 (V: Default)
         'FID_COND_SCR_DIV_CODE': '16449', # 스크리닝 코드
         'FID_INPUT_ISCD': '0000',         # 전체 종목
@@ -69,6 +69,9 @@ def get_aggregated_codes(max_cnt=10):
         'FID_ETC_CLS_CODE': '0'           # 0:전체,1:외국인,2:기관계,3:기타
     }
     try:
+        # 집계 API는 POST 방식으로 호출해야 합니다
+        resp = session.post(url, headers=headers, json=payload, timeout=10)
+        resp.raise_for_status()
         resp = session.get(url, headers=headers, params=params, timeout=10)
         resp.raise_for_status()
         data = resp.json()
