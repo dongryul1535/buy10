@@ -1,45 +1,18 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-main.py
-
-KIS OpenAPI 인증 + 외국인 순매수 상위 10종목 조회
-+ FinanceDataReader로 6개월치 가격 데이터 조회
-+ NH MTS 스타일 Composite MACD+Stochastic 차트 작성 (가격+MA20, MACD+SlowK/D)
-+ Golden/Dead Cross 감지 시 Telegram 알림 (거래대금, 등락률, 전일비, 한글 폰트)
-+ 모든 날짜 연산을 한국 표준시(Asia/Seoul) 기준으로 처리
-
-환경변수:
-  KIS_APP_KEY, KIS_APP_SECRET
-  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-  FONT_PATH: fonts/NanumGothic.ttf (선택, 한글 폰트)
-
-필수 패키지:
-  requests, pandas, FinanceDataReader, matplotlib, python-dateutil
-선택 패키지 (타임존 처리):
-  pytz (Python <3.9 환경에서 필요한 경우)
-"""
-
-import os
-import time
-import logging
-import requests
-import pandas as pd
-import FinanceDataReader as fdr
-import matplotlib.pyplot as plt
-import io
-import numpy as np
-from datetime import datetime
-from dateutil.relativedelta import relativedelta
-
-# 한글 폰트 적용
-font_path = os.getenv("FONT_PATH", "fonts/NanumGothic.ttf")
+# 한글 폰트 적용 (있으면 NanumGothic, 없으면 sans-serif)
+FONT_PATH = os.getenv("FONT_PATH", "fonts/NanumGothic.ttf")
+font_path = FONT_PATH
 from matplotlib import font_manager, rc
+import matplotlib.pyplot as plt
+import warnings
+
 if os.path.exists(font_path):
+    font_manager.fontManager.addfont(font_path)
+    plt.rc('font', family='NanumGothic')
     fontprop = font_manager.FontProperties(fname=font_path)
-    plt.rc('font', family=fontprop.get_name())
 else:
-    fontprop = None  # fallback
+    warnings.filterwarnings("ignore", category=UserWarning, module="matplotlib.font_manager")
+    plt.rc('font', family='sans-serif')
+    fontprop = None
 
 # 타임존 처리
 try:
