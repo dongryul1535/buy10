@@ -60,7 +60,7 @@ def compute_signals(df):
     return signals
 
 # 환경 변수: 투자자 순매수 엔드포인트 경로
-INVESTOR_NET_PATH = os.getenv('INVESTOR_NET_PATH', 'investor-net')  # API Portal Service Path로 설정
+INVESTOR_NET_PATH = os.getenv('INVESTOR_NET_PATH', 'frgnmem-pchs-trend')  # 예: 'frgnmem-pchs-trend'  # API Portal Service Path로 설정
 
 # 투자자 순매수 조회 (외국인 또는 기관)
 def get_top_net_buy(inv_div_code, count=10):
