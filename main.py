@@ -43,7 +43,7 @@ API_URL = (
     "https://openapi.koreainvestment.com:9443"
     "/uapi/domestic-stock/v1/quotations/foreign-institution-total"
 )
-TR_ID   = "FHKSTA01400"
+TR_ID   = "FHPTJ04400000"  # ← 이 부분만 수정!
 PARAMS = {
     "fid_cond_mrkt_div_code":    "V",
     "fid_cond_scr_div_code":     "16449",
