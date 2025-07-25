@@ -58,12 +58,15 @@ def compute_signals(df):
     return sigs
 
 # 외국인/기관 별도 순매수 상위 종목 조회
-# 외국인/기관 별도 순매수 상위 종목 조회
 INVESTOR_NET_PATH = os.getenv('INVESTOR_NET_PATH', 'investor-net')  # API Portal에서 확인한 실제 경로로 변경 가능
 def get_top_net_buy(inv_type, n=10):
     div_code = '1000' if inv_type == 'foreign' else '2000'
-    url = f"{KIS_BASE}/{INVESTOR_NET_PATH}"  # 기본 값 투자자 순매수 추이
-    headers = {'Content-Type': 'application/json', 'appKey': KIS_APP_KEY, 'appSecret': KIS_APP_SECRET}
+    url = f"{KIS_BASE}/{INVESTOR_NET_PATH}"
+    headers = {
+        'Content-Type': 'application/json',
+        'appKey': KIS_APP_KEY,
+        'appSecret': KIS_APP_SECRET
+    }
     params = {
         'CANO': KIS_ACCNO,
         'INQR_DVSN': '2',
@@ -74,21 +77,17 @@ def get_top_net_buy(inv_type, n=10):
     try:
         r = session.get(url, headers=headers, params=params, timeout=10)
         if r.status_code == 404:
-            # 잘못된 엔드포인트일 수 있습니다.
+            # 엔드포인트 경로가 다르다면 빈 리스트 반환
             return []
         r.raise_for_status()
         data = r.json()
         items = data.get('output2') or data.get('output') or []
         return [itm.get('stck_shrn_iscd') for itm in items if itm.get('stck_shrn_iscd')]
     except Exception as e:
-        # 네트워크 오류, 500 등은 재시도 로직에서 처리됩니다.
-        print(f"Error in get_top_net_buy({inv_type}): {e}")
-        return []('stck_shrn_iscd') for itm in items if itm.get('stck_shrn_iscd')]
-    except Exception as e:
         print(f"Error in get_top_net_buy({inv_type}): {e}")
         return []
 
-# 공통 순매수 상위 종목 조회 (외국인과 기관 교집합)
+# 공통 순매수 상위 종목 조회 (외국인과 기관 교집합) (외국인과 기관 교집합)
 def get_common_net_buy(n=10):
     foreign = get_top_net_buy('foreign', n)
     institution = get_top_net_buy('institution', n)
