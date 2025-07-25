@@ -70,8 +70,8 @@ def get_aggregated_codes(max_cnt=10):
         'fid_etc_cls_code': '0'           # 0:전체,1:외국인,2:기관계,3:기타
     }
     try:
-        # 집계 API는 POST 방식으로 호출합니다
-        resp = session.post(url, headers=headers, json=payload, timeout=10)
+        # 집계 API는 GET 방식으로 호출합니다
+        resp = session.get(url, headers=headers, params=payload, timeout=10)
         resp.raise_for_status()
         data = resp.json()
         items = data.get('output', []) or data.get('output2', [])
