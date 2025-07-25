@@ -29,10 +29,21 @@ retries = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504]
 session.mount('https://', HTTPAdapter(max_retries=retries))
 session.mount('http://', HTTPAdapter(max_retries=retries))
 
-# 한글 폰트 설정
-if os.path.exists(FONT_PATH):
-    prop = fm.FontProperties(fname=FONT_PATH)
-    plt.rcParams['font.family'] = prop.get_name()
+# OAuth2 토큰 발급 (Client Credentials)
+OAUTH_URL = 'https://openapi.koreainvestment.com:9443/oauth2/tokenP'
+def get_access_token():
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    data = {
+        'grant_type': 'client_credentials',
+        'appkey': KIS_APP_KEY,
+        'appsecret': KIS_APP_SECRET
+    }
+    resp = session.post(OAUTH_URL, headers=headers, data=data)
+    resp.raise_for_status()
+    token_data = resp.json()
+    return token_data.get('access_token') or token_data.get('accessToken')
+
+# 한글 폰트 설정['font.family'] = prop.get_name()
 
 # MACD+Stochastic 계산
 def compute_indicators(df):
@@ -90,6 +101,7 @@ def get_top_net_buy(inv_div_code, count=10):
 COMMON_NET_PATH = os.getenv('COMMON_NET_PATH', 'foreign-institution-total')  # '/uapi/.../foreign-institution-total'의 마지막 슬러그
 
 def get_common_net_buy(count=10):
+    # Try aggregated endpoint first
     url = f"{KIS_BASE}/{COMMON_NET_PATH}"
     headers = {'Content-Type': 'application/json', 'appKey': KIS_APP_KEY, 'appSecret': KIS_APP_SECRET}
     params = {
@@ -100,13 +112,20 @@ def get_common_net_buy(count=10):
     }
     try:
         r = session.get(url, headers=headers, params=params, timeout=10)
-        if r.status_code == 404:
-            print(f"Endpoint not found: {COMMON_NET_PATH} (404)")
-            return []
         r.raise_for_status()
         data = r.json()
         items = data.get('output2', [])
-        return [item['mksc_shrn_iscd'] for item in items]
+        codes = [item['mksc_shrn_iscd'] for item in items]
+        if codes:
+            return codes
+    except Exception as e:
+        print(f"Aggregated API failed: {e}")
+    # Fallback to separate foreign and institution calls
+    print("Falling back to separate investor-net calls")
+    foreign = get_top_net_buy('1000', count)
+    institution = get_top_net_buy('2000', count)
+    common = sorted(set(foreign) & set(institution))
+    return common
     except Exception as e:
         print(f"Error fetching {COMMON_NET_PATH}: {e}")
         return []
