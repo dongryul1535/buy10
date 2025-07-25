@@ -1,157 +1,184 @@
-# main.py
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+main.py
+
+KIS OpenAPI 인증 + 외국인 순매수 상위 10종목 조회
++ FinanceDataReader로 6개월치 가격 데이터 조회
++ NH MTS 스타일 Composite MACD+Stochastic 차트 작성
++ Golden/Dead Cross 감지 시 Telegram 알림
+
+환경변수:
+  KIS_APP_KEY, KIS_APP_SECRET
+  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+"""
+
 import os
-import io
-from datetime import datetime
-from dateutil.relativedelta import relativedelta
+import logging
 import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 import pandas as pd
 import FinanceDataReader as fdr
 import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
+import io
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 
-# 환경 변수 설정
-TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
-FONT_PATH = 'fonts/NanumGothic.ttf'
+# ──────────────────────────────────────────────────────────────────────────────
+# 1) KIS API 인증 로직
+# ──────────────────────────────────────────────────────────────────────────────
+API_KEY    = os.getenv("KIS_APP_KEY")
+API_SECRET = os.getenv("KIS_APP_SECRET")
+TOKEN_URL  = "https://openapi.koreainvestment.com:9443/oauth2/tokenP"
+_access_token = None
 
-# KIS API 설정
-KIS_BASE = 'https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations'
-KIS_APP_KEY = os.getenv('KIS_APP_KEY')
-KIS_APP_SECRET = os.getenv('KIS_APP_SECRET')
-KIS_ACCNO = os.getenv('KIS_ACCOUNT_NUMBER')
-
-# HTTP 세션 및 재시도 설정
-session = requests.Session()
-retries = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
-session.mount('https://', HTTPAdapter(max_retries=retries))
-
-# 한글 폰트 설정
-if os.path.exists(FONT_PATH):
-    prop = fm.FontProperties(fname=FONT_PATH)
-    plt.rcParams['font.family'] = prop.get_name()
-
-# OAuth2 토큰 발급 함수
-OAUTH_URL = 'https://openapi.koreainvestment.com:9443/oauth2/token'
-def get_access_token():
-    """클라이언트 자격 증명 방식으로 액세스 토큰을 발급받습니다."""
-    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
-    data = {
-        'grant_type': 'client_credentials',
-        'appkey': KIS_APP_KEY,
-        'appsecret': KIS_APP_SECRET
-    }
-    resp = session.post(OAUTH_URL, headers=headers, data=data)
+def auth():
+    global _access_token
+    if not API_KEY or not API_SECRET:
+        raise RuntimeError("환경변수 KIS_APP_KEY/KIS_APP_SECRET 을 설정해주세요.")
+    data = {"grant_type": "client_credentials", "appkey": API_KEY, "appsecret": API_SECRET}
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    resp = requests.post(TOKEN_URL, data=data, headers=headers)
     resp.raise_for_status()
-    token_data = resp.json()
-    token = token_data.get('access_token') or token_data.get('accessToken')
-    print(f"DEBUG: token={token}")
-    return token
+    body = resp.json()
+    _access_token = body.get("access_token")
+    if not _access_token:
+        raise RuntimeError(f"토큰 발급 실패: {body}")
 
-# 국내기관·외국인 매매종목 가집계 조회
-AGG_PATH = 'foreign-institution-total'
-def get_aggregated_codes(max_cnt=10):
-    """국내기관·외국인 매매종목 가집계 API 호출 후 종목 코드 리스트 반환"""
-    token = get_access_token()
-    url = f"{KIS_BASE}/{AGG_PATH}"
-    headers = {
-        'Content-Type': 'application/json',
-        'appKey': KIS_APP_KEY,
-        'appSecret': KIS_APP_SECRET,
-        'Authorization': f'Bearer {token}'
-    }
-    payload = {
-        'fid_cond_mrkt_div_code': 'V',    # 시장 구분 (V: Default)
-        'fid_cond_scr_div_code': '16449', # 스크리닝 코드
-        'fid_input_iscd': '0000',         # 전체 종목
-        'fid_div_cls_code': '0',          # 0:수량정렬, 1:금액정렬
-        'fid_rank_sort_cls_code': '0',    # 0:순매수상위, 1:순매도상위
-        'fid_etc_cls_code': '0'           # 0:전체,1:외국인,2:기관계,3:기타
-    }
-    try:
-        # 집계 API는 GET 방식으로 호출합니다
-        resp = session.get(url, headers=headers, params=payload, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        items = data.get('output', []) or data.get('output2', [])
-        return [itm['mksc_shrn_iscd'] for itm in items]
-    except Exception as e:
-        print(f"Error fetching aggregated codes: {e}")
-        return []
 
-# MACD+Stochastic 계산
-def compute_indicators(df):
-    exp12 = df['Close'].ewm(span=12).mean()
-    exp26 = df['Close'].ewm(span=26).mean()
-    macd = exp12 - exp26
-    signal = macd.ewm(span=9).mean()
-    low14 = df['Low'].rolling(14).min()
-    high14 = df['High'].rolling(14).max()
-    stoch_k = 100 * (df['Close'] - low14) / (high14 - low14)
-    stoch_d = stoch_k.rolling(3).mean()
-    return pd.DataFrame({'CompK': macd + stoch_k, 'CompD': signal + stoch_d}).dropna()
+def get_headers():
+    if not _access_token:
+        raise RuntimeError("토큰이 없습니다. 먼저 auth() 를 호출하세요.")
+    return {"Authorization": f"Bearer {_access_token}", "Content-Type": "application/json"}
 
-# 매수/매도 신호 계산
-def compute_signals(ind):
-    prev = ind.shift(1)
-    sigs = []
-    for t in ind.index[1:]:
-        pk, pd = prev.at[t, 'CompK'], prev.at[t, 'CompD']
-        ck, cd = ind.at[t, 'CompK'], ind.at[t, 'CompD']
-        if pk < pd and ck > cd:
-            sigs.append((t, 'buy'))
-        elif pk > pd and ck < cd:
-            sigs.append((t, 'sell'))
-    return sigs
+# ──────────────────────────────────────────────────────────────────────────────
+# 2) 외국인 매매종목가집계 조회
+# ──────────────────────────────────────────────────────────────────────────────
+API_URL = "https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/quotations/foreign-institution-total"
+PARAMS = dict(
+    fid_cond_mrkt_div_code="V",  # 전체
+    fid_cond_scr_div_code="16449",  # 전체
+    fid_input_iscd="0000",  # 전체
+    fid_div_cls_code="0",  # 전체
+    fid_rank_sort_cls_code="0",  # 거래대금 기준
+    fid_etc_cls_code="0"
+)
 
-# 차트 생성
-def plot_signals(code, df, ind, sigs):
-    plt.style.use('dark_background')
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6), gridspec_kw={'height_ratios': [2, 1]})
-    ax1.plot(df.index, df['Close'], lw=1.2)
-    for t, typ in sigs:
-        marker = '^' if typ == 'buy' else 'v'
-        color = 'lime' if typ == 'buy' else 'red'
-        ax1.scatter(t, df.at[t, 'Close'], marker=marker, color=color)
-    ax1.set_title(f"{code} Price & Signals")
-    ax1.grid(True, ls='--', lw=0.5)
-    ax2.plot(ind.index, ind['CompK'], lw=1, label='CompK')
-    ax2.plot(ind.index, ind['CompD'], lw=1, label='CompD')
-    ax2.legend(loc='upper left')
-    ax2.grid(True, ls='--', lw=0.5)
+def fetch_top10_foreign():
+    headers = get_headers()
+    resp = requests.get(API_URL, headers=headers, params=PARAMS)
+    resp.raise_for_status()
+    body = resp.json()
+    items = body.get("output", {}).get("foreignInstitutionTotals", [])
+    df = pd.DataFrame(items)
+    df = df.rename(columns={
+        'mksc_shrn_iscd': '종목코드',
+        'hts_kor_isnm': '종목명',
+        'frgn_ntby_tr_pbmn': '외국인 순매수 거래대금'
+    })
+    df['외국인 순매수 거래대금'] = pd.to_numeric(df['외국인 순매수 거래대금'], errors='coerce')
+    return df.sort_values('외국인 순매수 거래대금', ascending=False).head(10).reset_index(drop=True)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 3) Telegram 알림 함수
+# ──────────────────────────────────────────────────────────────────────────────
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+if not TOKEN or not CHAT_ID:
+    raise RuntimeError("환경변수 TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID 을 설정해주세요.")
+
+TELEGRAM_SENDMSG = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+TELEGRAM_SENDPHOTO = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
+
+def send_message(text: str):
+    resp = requests.post(TELEGRAM_SENDMSG, data={"chat_id": CHAT_ID, "text": text})
+    resp.raise_for_status()
+
+
+def send_photo(image_bytes: bytes, caption: str = None):
+    files = {"photo": ("chart.png", image_bytes)}
+    data = {"chat_id": CHAT_ID}
+    if caption:
+        data["caption"] = caption
+    resp = requests.post(TELEGRAM_SENDPHOTO, files=files, data=data)
+    resp.raise_for_status()
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 4) 지표 계산 및 신호 탐지 함수
+# ──────────────────────────────────────────────────────────────────────────────
+
+def analyze_symbol(code: str, name: str):
+    # 가격 조회: 6개월
+    end = datetime.today().date()
+    start = end - relativedelta(months=6)
+    df = fdr.DataReader(code, start.strftime('%Y-%m-%d'), end.strftime('%Y-%m-%d'))
+    if df.empty:
+        logging.warning(f"{code}({name}) 데이터 조회 실패")
+        return
+
+    # MACD
+    ema_fast = df['Close'].ewm(span=12, adjust=False).mean()
+    ema_slow = df['Close'].ewm(span=26, adjust=False).mean()
+    macd = ema_fast - ema_slow
+    macd_signal = macd.ewm(span=9, adjust=False).mean()
+    
+    # Stochastic
+    low14 = df['Low'].rolling(window=14).min()
+    high14 = df['High'].rolling(window=14).max()
+    stoch_k = (df['Close'] - low14) / (high14 - low14) * 100
+    stoch_d = stoch_k.rolling(window=3).mean()
+
+    # Composite
+    comp_k = macd + stoch_k
+    comp_d = macd_signal + stoch_d
+
+    # 신호 탐지 (마지막 두 일자)
+    if len(comp_k) < 2:
+        return
+    prev_k, prev_d = comp_k.iloc[-2], comp_d.iloc[-2]
+    curr_k, curr_d = comp_k.iloc[-1], comp_d.iloc[-1]
+
+    signal = None
+    if prev_k < prev_d and curr_k > curr_d:
+        signal = 'BUY'
+    elif prev_k > prev_d and curr_k < curr_d:
+        signal = 'SELL'
+
+    if not signal:
+        return
+
+    # 차트 그리기
+    plt.figure(figsize=(10, 6))
+    plt.plot(df.index, comp_k, label='Composite K')
+    plt.plot(df.index, comp_d, label='Composite D')
+    plt.title(f"{name}({code}) Composite MACD+Stoch")
+    plt.legend()
     plt.tight_layout()
     buf = io.BytesIO()
-    plt.savefig(buf, format='png', dpi=150)
+    plt.savefig(buf, format='png')
     buf.seek(0)
-    plt.close(fig)
-    return buf
+    plt.close()
 
-# 텔레그램 발송
-def send_telegram(text, buf=None):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
-    try:
-        if buf:
-            session.post(url + 'sendPhoto', data={'chat_id': TELEGRAM_CHAT_ID, 'caption': text}, files={'photo': buf})
-        else:
-            session.post(url + 'sendMessage', data={'chat_id': TELEGRAM_CHAT_ID, 'text': text})
-    except Exception as e:
-        print(f"Telegram send error: {e}")
+    # Telegram 전송
+    caption = f"{name}({code}) - {signal} 신호 발생"
+    send_photo(buf.getvalue(), caption=caption)
+    send_message(f"{name}({code}): {signal} 신호를 보냈습니다.")
 
-# 메인 실행
-if __name__ == '__main__':
-    codes = get_aggregated_codes(10)
-    if not codes:
-        send_telegram('종목없음')
-        exit()
-    send_telegram(f"Codes: {', '.join(codes)}")
-    start_date = (datetime.now() - relativedelta(months=6)).strftime('%Y-%m-%d')
-    for code in codes:
-        df = fdr.DataReader(code, start_date)
-        ind = compute_indicators(df)
-        sigs = compute_signals(ind)
-        if sigs:
-            buf = plot_signals(code, df, ind, sigs)
-            send_telegram(code, buf)
-        else:
-            send_telegram(f"{code}: No signals")
+# ──────────────────────────────────────────────────────────────────────────────
+# 5) 메인 흐름
+# ──────────────────────────────────────────────────────────────────────────────
+
+def main():
+    logging.info("KIS API 인증 완료")
+    auth()
+    top10 = fetch_top10_foreign()
+
+    print("\n=== 외국인 순매수 거래대금 상위 10종목 ===\n")
+    print(top10[['종목코드', '종목명', '외국인 순매수 거래대금']])
+
+    for _, row in top10.iterrows():
+        analyze_symbol(row['종목코드'], row['종목명'])
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    main()
