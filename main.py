@@ -29,8 +29,13 @@ retries = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504]
 session.mount('https://', HTTPAdapter(max_retries=retries))
 session.mount('http://', HTTPAdapter(max_retries=retries))
 
-# OAuth2 토큰 발급 (Client Credentials)
-OAUTH_URL = 'https://openapi.koreainvestment.com:9443/oauth2/tokenP'
+# 한글 폰트 설정
+if os.path.exists(FONT_PATH):
+    prop = fm.FontProperties(fname=FONT_PATH)
+    plt.rcParams['font.family'] = prop.get_name()
+
+# OAuth2 토큰 발급 (Client Credentials Grant)
+OAUTH_URL = 'https://openapi.koreainvestment.com:9443/oauth2/token'
 def get_access_token():
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
     data = {
@@ -41,12 +46,10 @@ def get_access_token():
     resp = session.post(OAUTH_URL, headers=headers, data=data)
     resp.raise_for_status()
     token_data = resp.json()
-    return token_data.get('access_token') or token_data.get('accessToken')
-
-# 한글 폰트 설정
-if os.path.exists(FONT_PATH):
-    prop = fm.FontProperties(fname=FONT_PATH)
-    plt.rcParams['font.family'] = prop.get_name()
+    # 키 이름은 access_token 또는 accessToken
+    token = token_data.get('access_token') or token_data.get('accessToken')
+    print(f"DEBUG: Obtained access token: {token}")  # Debug: 토큰 발급 확인
+    return token
 
 # MACD+Stochastic 계산
 def compute_indicators(df):
@@ -73,14 +76,10 @@ def compute_signals(df):
             signals.append((idx, 'sell'))
     return signals
 
-# 환경 변수: 투자자 순매수 엔드포인트 경로
-INVESTOR_NET_PATH = os.getenv('INVESTOR_NET_PATH', 'investor-net')
-COMMON_NET_PATH = os.getenv('COMMON_NET_PATH', 'foreign-institution-total')
-
-# 투자자 순매수 조회 (외국인 또는 기관)
+# 투자자 순매수 조회 (외국인 or 기관)
 def get_top_net_buy(inv_div_code, count=10):
     token = get_access_token()
-    url = f"{KIS_BASE}/{INVESTOR_NET_PATH}"
+    url = f"{KIS_BASE}/investor-net"
     headers = {
         'Content-Type': 'application/json',
         'Authorization': f'Bearer {token}',
@@ -101,15 +100,15 @@ def get_top_net_buy(inv_div_code, count=10):
         items = data.get('output2', [])
         return [item['mksc_shrn_iscd'] for item in items]
     except Exception as e:
-        print(f"Error fetching {INVESTOR_NET_PATH} ({inv_div_code}): {e}")
+        print(f"Error fetching investor-net ({inv_div_code}): {e}")
         return []
 
 # 외국인·기관 동시 순매수 종목 조회
-# 우선 집계 API, 실패 시 fallback
+# 우선 집계 API, 실패 시 개별 호출 교집합
 
 def get_common_net_buy(count=10):
     token = get_access_token()
-    url = f"{KIS_BASE}/{COMMON_NET_PATH}"
+    url = f"{KIS_BASE}/foreign-institution-total"
     headers = {
         'Content-Type': 'application/json',
         'Authorization': f'Bearer {token}',
@@ -132,7 +131,6 @@ def get_common_net_buy(count=10):
             return codes
     except Exception as e:
         print(f"Aggregated API failed: {e}")
-
     print("Falling back to separate investor-net calls")
     foreign = get_top_net_buy('1000', count)
     institution = get_top_net_buy('2000', count)
@@ -152,7 +150,6 @@ def send_telegram(message, buf=None):
         print(f"Telegram error: {e}")
 
 # 차트 생성
-
 def plot_signals(code, df, df_ind, signals):
     plt.style.use('dark_background')
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6), gridspec_kw={'height_ratios': [2, 1]})
@@ -175,7 +172,6 @@ def plot_signals(code, df, df_ind, signals):
     return buf
 
 # 메인 실행
-
 def main():
     codes = get_common_net_buy()
     if not codes:
