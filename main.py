@@ -43,7 +43,10 @@ def get_access_token():
     token_data = resp.json()
     return token_data.get('access_token') or token_data.get('accessToken')
 
-# 한글 폰트 설정['font.family'] = prop.get_name()
+# 한글 폰트 설정
+if os.path.exists(FONT_PATH):
+    prop = fm.FontProperties(fname=FONT_PATH)
+    plt.rcParams['font.family'] = prop.get_name()
 
 # MACD+Stochastic 계산
 def compute_indicators(df):
@@ -71,12 +74,19 @@ def compute_signals(df):
     return signals
 
 # 환경 변수: 투자자 순매수 엔드포인트 경로
-INVESTOR_NET_PATH = os.getenv('INVESTOR_NET_PATH', 'frgnmem-pchs-trend')  # 예: 'frgnmem-pchs-trend'  # API Portal Service Path로 설정
+INVESTOR_NET_PATH = os.getenv('INVESTOR_NET_PATH', 'investor-net')
+COMMON_NET_PATH = os.getenv('COMMON_NET_PATH', 'foreign-institution-total')
 
 # 투자자 순매수 조회 (외국인 또는 기관)
 def get_top_net_buy(inv_div_code, count=10):
+    token = get_access_token()
     url = f"{KIS_BASE}/{INVESTOR_NET_PATH}"
-    headers = {'Content-Type': 'application/json', 'appKey': KIS_APP_KEY, 'appSecret': KIS_APP_SECRET}
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {token}',
+        'appKey': KIS_APP_KEY,
+        'appSecret': KIS_APP_SECRET
+    }
     params = {
         'CANO': KIS_ACCNO,
         'INQR_DVSN': '2',
@@ -86,9 +96,6 @@ def get_top_net_buy(inv_div_code, count=10):
     }
     try:
         r = session.get(url, headers=headers, params=params, timeout=10)
-        if r.status_code == 404:
-            print(f"Endpoint not found: {INVESTOR_NET_PATH} (404)")
-            return []
         r.raise_for_status()
         data = r.json()
         items = data.get('output2', [])
@@ -97,13 +104,18 @@ def get_top_net_buy(inv_div_code, count=10):
         print(f"Error fetching {INVESTOR_NET_PATH} ({inv_div_code}): {e}")
         return []
 
-# 외국인·기관 동시 순매수 종목 조회 (aggregated endpoint)
-COMMON_NET_PATH = os.getenv('COMMON_NET_PATH', 'foreign-institution-total')  # '/uapi/.../foreign-institution-total'의 마지막 슬러그
+# 외국인·기관 동시 순매수 종목 조회
+# 우선 집계 API, 실패 시 fallback
 
 def get_common_net_buy(count=10):
-    # Try aggregated endpoint first
+    token = get_access_token()
     url = f"{KIS_BASE}/{COMMON_NET_PATH}"
-    headers = {'Content-Type': 'application/json', 'appKey': KIS_APP_KEY, 'appSecret': KIS_APP_SECRET}
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {token}',
+        'appKey': KIS_APP_KEY,
+        'appSecret': KIS_APP_SECRET
+    }
     params = {
         'CANO': KIS_ACCNO,
         'INQR_DVSN': '2',
@@ -120,17 +132,13 @@ def get_common_net_buy(count=10):
             return codes
     except Exception as e:
         print(f"Aggregated API failed: {e}")
-    # Fallback to separate foreign and institution calls
+
     print("Falling back to separate investor-net calls")
     foreign = get_top_net_buy('1000', count)
     institution = get_top_net_buy('2000', count)
-    common = sorted(set(foreign) & set(institution))
-    return common
-    except Exception as e:
-        print(f"Error fetching {COMMON_NET_PATH}: {e}")
-        return []
+    return sorted(set(foreign) & set(institution))
 
-# 텔레그램 전송
+# 텔레그램 전송 함수
 def send_telegram(message, buf=None):
     bot = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/"
     try:
@@ -144,6 +152,7 @@ def send_telegram(message, buf=None):
         print(f"Telegram error: {e}")
 
 # 차트 생성
+
 def plot_signals(code, df, df_ind, signals):
     plt.style.use('dark_background')
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6), gridspec_kw={'height_ratios': [2, 1]})
@@ -166,6 +175,7 @@ def plot_signals(code, df, df_ind, signals):
     return buf
 
 # 메인 실행
+
 def main():
     codes = get_common_net_buy()
     if not codes:
