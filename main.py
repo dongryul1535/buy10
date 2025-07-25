@@ -67,18 +67,17 @@ PARAMS = dict(
 )
 
 def fetch_top10_foreign():
-    headers = get_headers()
-    # UAPI는 POST로 요청해야 하나, 간혹 500 에러가 발생해 GET으로 재시도합니다.
+    headers = get_headers().copy()
+    # UAPI requires form-encoded POST body
+    headers['Content-Type'] = 'application/x-www-form-urlencoded'
     try:
-        resp = requests.post(API_URL, headers=headers, json=PARAMS, timeout=10)
+        resp = requests.post(API_URL, headers=headers, data=PARAMS, timeout=10)
         resp.raise_for_status()
     except Exception as e:
-        logging.warning(f"POST 요청 실패({e}), GET으로 재시도합니다.")
-        resp = requests.get(API_URL, headers=headers, params=PARAMS, timeout=10)
-        resp.raise_for_status()
+        logging.error(f"외국인 매매종목가집계 요청 실패: {e}")
+        raise
 
     body = resp.json()
-    # 출력 경로 확인: UAPI에서는 'output' 하위에 데이터가 있습니다.
     items = body.get("output", {}).get("foreignInstitutionTotals", [])
     df = pd.DataFrame(items)
     if df.empty:
