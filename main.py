@@ -57,7 +57,7 @@ def compute_signals(df):
             sigs.append((idx, 'sell'))
     return sigs
 
-# 외국인/기관 별도 순매수 상위 종목 조회 함수
+# 외국인/기관 별도 순매수 상위 종목 조회
 def get_top_net_buy(inv_type, n=10):
     div_code = '1000' if inv_type == 'foreign' else '2000'
     url = f"{KIS_BASE}/investor-net"
@@ -79,25 +79,12 @@ def get_top_net_buy(inv_type, n=10):
         print(f"Error in get_top_net_buy({inv_type}): {e}")
         return []
 
-# 공통 순매수 상위 종목 조회 (실전계좌 전용)
+# 공통 순매수 상위 종목 조회 (외국인과 기관 교집합)
 def get_common_net_buy(n=10):
-    url = f"{KIS_BASE}/foreign-institution-total"
-    headers = {'Content-Type': 'application/json', 'appKey': KIS_APP_KEY, 'appSecret': KIS_APP_SECRET}
-    params = {
-        'CANO': KIS_ACCNO,
-        'INQR_DVSN': '2',
-        'INQR_DT': datetime.now().strftime('%Y%m%d'),
-        'MAX_CNT': n
-    }
-    try:
-        r = session.get(url, headers=headers, params=params, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        items = data.get('output2') or data.get('output') or []
-        return [itm.get('stck_shrn_iscd') for itm in items if itm.get('stck_shrn_iscd')]
-    except Exception as e:
-        print(f"API error on foreign-institution-total: {e}")
-        return []
+    foreign = get_top_net_buy('foreign', n)
+    institution = get_top_net_buy('institution', n)
+    common = sorted(set(foreign) & set(institution))
+    return common
 
 # 텔레그램 전송 함수
 def send_telegram(text, buf=None):
