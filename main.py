@@ -33,7 +33,7 @@ if os.path.exists(FONT_PATH):
     plt.rcParams['font.family'] = prop.get_name()
 
 # OAuth2 Access Token 발급 (Client Credentials)
-OAUTH_URL = 'https://openapi.koreainvestment.com:9443/oauth2/tokenP'
+OAUTH_URL = 'https://openapi.koreainvestment.com:9443/oauth2/token'
 
 def get_access_token():
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
