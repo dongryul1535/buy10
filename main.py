@@ -28,6 +28,7 @@ import pandas as pd
 import FinanceDataReader as fdr
 import matplotlib.pyplot as plt
 import io
+import numpy as np
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
@@ -124,6 +125,44 @@ def fetch_top10_foreign() -> pd.DataFrame:
         df["외국인 순매수 거래대금"] = pd.NA
     return df.sort_values("외국인 순매수 거래대금", ascending=False).head(10)
 
+# --- NH MACD+Stoch (main(4).py 방식) ---
+def add_composites(df: pd.DataFrame,
+                   fast=12, slow=26,
+                   k_window=14, k_smooth=3,
+                   d_smooth=3, use_ema=True, clip=True) -> pd.DataFrame:
+    close, high, low = df['Close'], df['High'], df['Low']
+
+    ema_fast = close.ewm(span=fast, adjust=False).mean()
+    ema_slow = close.ewm(span=slow, adjust=False).mean()
+    macd_raw = ema_fast - ema_slow
+
+    macd_min = macd_raw.rolling(k_window, min_periods=1).min()
+    macd_max = macd_raw.rolling(k_window, min_periods=1).max()
+    macd_norm = (macd_raw - macd_min) / (macd_max - macd_min).replace(0, np.nan) * 100
+    macd_norm = macd_norm.fillna(50)
+    if k_smooth > 1:
+        macd_norm = macd_norm.ewm(span=k_smooth, adjust=False).mean() if use_ema \
+            else macd_norm.rolling(k_smooth, min_periods=1).mean()
+
+    ll = low.rolling(k_window, min_periods=1).min()
+    hh = high.rolling(k_window, min_periods=1).max()
+    k_raw = (close - ll) / (hh - ll).replace(0, np.nan) * 100
+    k_raw = k_raw.fillna(50)
+    slow_k = (k_raw.ewm(span=k_smooth, adjust=False).mean() if (k_smooth > 1 and use_ema)
+              else k_raw.rolling(k_smooth, min_periods=1).mean() if k_smooth > 1 else k_raw)
+
+    comp_k = (macd_norm + slow_k) / 2.0
+    comp_d = comp_k.rolling(d_smooth, min_periods=1).mean() if d_smooth > 1 else comp_k
+
+    if clip:
+        comp_k = comp_k.clip(0, 100)
+        comp_d = comp_d.clip(0, 100)
+
+    df['CompK'] = comp_k
+    df['CompD'] = comp_d
+    df['Diff']  = comp_k - comp_d
+    return df
+
 # 3) Telegram 알림 함수
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT  = os.getenv("TELEGRAM_CHAT_ID")
@@ -143,6 +182,7 @@ def send_photo(img_bytes: bytes, caption: str = ""):
     resp.raise_for_status()
 
 # 4) 분석 및 시그널 탐지
+
 def analyze_symbol(code: str, name: str, trading_value: float = None):
     now = datetime.now(KST)
     start = (now - relativedelta(months=6)).date()
@@ -152,26 +192,14 @@ def analyze_symbol(code: str, name: str, trading_value: float = None):
         logging.warning(f"{code}({name}) 데이터 조회 실패: {start}~{end}")
         return
 
-    # 가격/이동평균
     df["MA20"] = df["Close"].rolling(20).mean()
     today_close = df["Close"].iloc[-1]
     yesterday_close = df["Close"].iloc[-2] if len(df) > 1 else today_close
     change = today_close - yesterday_close
     change_rate = change / yesterday_close * 100 if yesterday_close else 0
 
-    # MACD, Signal, Stochastic
-    ema_fast = df["Close"].ewm(span=12, adjust=False).mean()
-    ema_slow = df["Close"].ewm(span=26, adjust=False).mean()
-    macd_line = ema_fast - ema_slow
-    signal_line = macd_line.ewm(span=9, adjust=False).mean()
-    low14 = df["Low"].rolling(14).min()
-    high14 = df["High"].rolling(14).max()
-    stoch_k = (df["Close"] - low14) / (high14 - low14) * 100
-    stoch_d = stoch_k.rolling(3).mean()
-    comp_k = macd_line + stoch_k
-    comp_d = signal_line + stoch_d
+    df = add_composites(df)
 
-    # 차트 그리기 (가격/MA20 + MACD+Stoch)
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10,8), sharex=True, gridspec_kw={'height_ratios':[2,1]})
     ax1.plot(df.index, df["Close"], label="종가")
     ax1.plot(df.index, df["MA20"], label="MA20", linestyle="--")
@@ -179,8 +207,10 @@ def analyze_symbol(code: str, name: str, trading_value: float = None):
     ax1.legend(loc="best", prop=fontprop)
     ax1.grid(True)
 
-    ax2.plot(df.index, comp_k, label="MACD+Slow%K", color="red")
-    ax2.plot(df.index, comp_d, label="MACD+Slow%D", color="purple")
+    ax2.plot(df.index, df["CompK"], color="red", label="MACD+Slow%K")
+    ax2.plot(df.index, df["CompD"], color="purple", label="MACD+Slow%D")
+    ax2.axhline(20, color="gray", linestyle="--", linewidth=0.5)
+    ax2.axhline(80, color="gray", linestyle="--", linewidth=0.5)
     ax2.set_ylim(0, 100)
     ax2.set_title("MACD+Stochastic (NH Style)", fontproperties=fontprop)
     ax2.legend(loc="best", prop=fontprop)
@@ -192,17 +222,15 @@ def analyze_symbol(code: str, name: str, trading_value: float = None):
     buf.seek(0)
     plt.close()
 
-    # 시그널 감지
     signal = None
-    if len(comp_k) >= 2:
-        prev_k, prev_d = comp_k.iloc[-2], comp_d.iloc[-2]
-        curr_k, curr_d = comp_k.iloc[-1], comp_d.iloc[-1]
-        if prev_k < prev_d and curr_k > curr_d:
-            signal = "BUY"
-        elif prev_k > prev_d and curr_k < curr_d:
-            signal = "SELL"
+    if len(df) >= 2:
+        prev_diff, curr_diff = df['Diff'].iloc[-2], df['Diff'].iloc[-1]
+        prev_k = df['CompK'].iloc[-2]
+        if prev_diff <= 0 < curr_diff:
+            signal = "BUY" if prev_k < 20 else "BUY_W"
+        elif prev_diff >= 0 > curr_diff:
+            signal = "SELL" if prev_k > 80 else "SELL_W"
 
-    # 텔레그램 메시지
     trading_value_str = f"{trading_value:,}" if trading_value is not None else "-"
     msg = (
         f"{name} ({code})\n"
@@ -213,7 +241,7 @@ def analyze_symbol(code: str, name: str, trading_value: float = None):
         msg += f"시그널: {signal}"
 
     send_photo(buf.getvalue(), caption=msg)
-    send_message(msg)
+    # send_message(msg)  # <--- 이 줄 제거!
 
 # 5) 메인 실행
 class KSTFormatter(logging.Formatter):
