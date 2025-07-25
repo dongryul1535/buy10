@@ -33,28 +33,7 @@ API_SECRET = os.getenv("KIS_APP_SECRET")
 TOKEN_URL  = "https://openapi.koreainvestment.com:9443/oauth2/token"
 _access_token = None
 
-def auth():
-    global _access_token
-    if not API_KEY or not API_SECRET:
-        raise RuntimeError("환경변수 KIS_APP_KEY/KIS_APP_SECRET 을 설정해주세요.")
-    data = {"grant_type": "client_credentials", "appkey": API_KEY, "appsecret": API_SECRET}
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    resp = requests.post(TOKEN_URL, data=data, headers=headers)
-    if resp.status_code != 200:
-        logging.error(f"토큰 요청 실패 {resp.status_code}: {resp.text}")
-        resp.raise_for_status()
-    body = resp.json()
-    _access_token = body.get("access_token")
-    if not _access_token:
-        raise RuntimeError(f"토큰 발급 실패: {body}")
-
-
-def get_headers():
-    if not _access_token:
-        raise RuntimeError("토큰이 없습니다. 먼저 auth() 를 호출하세요.")
-    return {"Authorization": f"Bearer {_access_token}"}
-
-# ──────────────────────────────────────────────────────────────────────────────
+def auth
 # ──────────────────────────────────────────────────────────────────────────────
 # 2) 외국인 매매종목가집계 호출 및 데이터 처리
 # ──────────────────────────────────────────────────────────────────────────────
