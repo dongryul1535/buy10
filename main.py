@@ -50,7 +50,8 @@ def get_access_token():
 
 # 국내기관·외국인 매매종목 가집계 조회
 AGG_PATH = 'foreign-institution-total'
-def get_aggregated_codes(max_cnt=10):
+def get_aggregated_codes():
+    """국내기관·외국인 매매종목 가집계 API 호출 후 종목 코드 리스트 반환"""
     token = get_access_token()
     url = f"{KIS_BASE}/{AGG_PATH}"
     headers = {
@@ -60,16 +61,12 @@ def get_aggregated_codes(max_cnt=10):
         'Authorization': f'Bearer {token}'
     }
     params = {
-        'CANO': KIS_ACCNO,
-        'FID_COND_MRKT_DIV_CODE': 'V',      # V(Default)
-        'FID_COND_SCR_DIV_CODE': '16449',   # Default screening code
-        'FID_INPUT_ISCD': '0000',           # 전체 종목
-        'FID_DIV_CLS_CODE': '1',            # 0:수량정렬, 1:금액정렬
-        'FID_RANK_SORT_CLS_CODE': '0',      # 0:순매수상위, 1:순매도상위
-        'FID_ETC_CLS_CODE': '0',            # 0:전체,1:외국인,2:기관계,3:기타
-        'INQR_DVSN': '2',                   # 조회구분(1:당일,2:누적)
-        'INQR_DT': datetime.now().strftime('%Y%m%d'),
-        'MAX_CNT': str(max_cnt)
+        'FID_COND_MRKT_DIV_CODE': 'V',    # 시장 구분 (V: Default)
+        'FID_COND_SCR_DIV_CODE': '16449', # 스크리닝 코드
+        'FID_INPUT_ISCD': '0000',         # 전체 종목
+        'FID_DIV_CLS_CODE': '1',          # 0:수량정렬, 1:금액정렬
+        'FID_RANK_SORT_CLS_CODE': '0',    # 0:순매수상위, 1:순매도상위
+        'FID_ETC_CLS_CODE': '0'           # 0:전체,1:외국인,2:기관계,3:기타
     }
     try:
         resp = session.get(url, headers=headers, params=params, timeout=10)
@@ -77,6 +74,9 @@ def get_aggregated_codes(max_cnt=10):
         data = resp.json()
         items = data.get('output', []) or data.get('output2', [])
         return [itm['mksc_shrn_iscd'] for itm in items]
+    except Exception as e:
+        print(f"Error fetching aggregated codes: {e}")
+        return []
     except Exception as e:
         print(f"Error fetching aggregated codes: {e}")
         return []
