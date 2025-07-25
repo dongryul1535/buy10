@@ -39,31 +39,7 @@ except ImportError:
     KST = pytz.timezone('Asia/Seoul')
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 1) KIS OpenAPI 인증
-# ──────────────────────────────────────────────────────────────────────────────
-API_KEY    = os.getenv("KIS_APP_KEY")
-API_SECRET = os.getenv("KIS_APP_SECRET")
-TOKEN_URL  = "https://openapi.koreainvestment.com:9443/oauth2/token"
-_access_token = None
-
-def auth():
-    """KIS OpenAPI 토큰 발급"""
-    global _access_token
-    if not API_KEY or not API_SECRET:
-        raise RuntimeError("환경변수 KIS_APP_KEY/KIS_APP_SECRET을 설정해주세요.")
-    data = {"grant_type": "client_credentials", "appkey": API_KEY, "appsecret": API_SECRET}
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    resp = requests.post(TOKEN_URL, data=data, headers=headers)
-    if resp.status_code != 200:
-        logging.error(f"토큰 발급 실패: {resp.status_code} {resp.text}")
-        resp.raise_for_status()
-    token = resp.json().get("access_token")
-    if not token:
-        raise RuntimeError(f"토큰 발급 오류: {resp.text}")
-    _access_token = token
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 2) 외국인 매매종목가집계 조회
+# 2) 외국인 매매종목가집계 조회 (GET 방식)
 # ──────────────────────────────────────────────────────────────────────────────
 API_URL = (
     "https://openapi.koreainvestment.com:9443"
@@ -80,6 +56,45 @@ PARAMS = {
 }
 
 def fetch_top10_foreign() -> pd.DataFrame:
+    """외국인 순매수 거래대금 상위 10종목 (KOSPI+KOSDAQ)"""
+    if not _access_token:
+        raise RuntimeError("auth()를 먼저 호출하세요.")
+    headers = {
+        "Authorization": f"Bearer {_access_token}",
+        "appkey":        API_KEY,
+        "appsecret":     API_SECRET,
+        "tr_id":         TR_ID,
+        "custtype":      "P"
+    }
+    for attempt in range(1, 4):
+        resp = requests.get(API_URL, headers=headers, params=PARAMS, timeout=10)
+        if resp.status_code == 200:
+            break
+        logging.warning(f"UAPI GET {attempt}회차 실패: {resp.status_code} {resp.text}")
+        time.sleep(1)
+    else:
+        logging.error("UAPI 모든 시도 실패")
+        return pd.DataFrame()
+
+    payload = resp.json().get("output", {})
+    items = payload.get("foreignInstitutionTotals") or payload.get("foreignInstitutionTotalList") or []
+    if not items:
+        logging.warning(f"조회 결과 없음: {payload}")
+        return pd.DataFrame()
+
+    df = pd.DataFrame(items)
+    col_map = {
+        "mksc_shrn_iscd":    "종목코드",
+        "hts_kor_isnm":      "종목명",
+        "frgn_ntby_tr_pbmn": "외국인 순매수 거래대금"
+    }
+    existing = {k:v for k,v in col_map.items() if k in df.columns}
+    df = df.rename(columns=existing)
+    if "외국인 순매수 거래대금" in df.columns:
+        df["외국인 순매수 거래대금"] = pd.to_numeric(df["외국인 순매수 거래대금"], errors="coerce")
+    else:
+        df["외국인 순매수 거래대금"] = pd.NA
+    return df.sort_values("외국인 순매수 거래대금", ascending=False).head(10)() -> pd.DataFrame:
     """외국인 순매수 상위 10종목 반환"""
     if not _access_token:
         raise RuntimeError("auth()를 먼저 호출하세요.")
@@ -194,8 +209,17 @@ def analyze_symbol(code: str, name: str):
 # ──────────────────────────────────────────────────────────────────────────────
 # 5) 메인 실행
 # ──────────────────────────────────────────────────────────────────────────────
+class KSTFormatter(logging.Formatter):
+    def converter(self, timestamp):
+        return datetime.fromtimestamp(timestamp, KST).timetuple()
+
 def main():
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+        # KST 타임존 포매터 적용
+    handler = logging.StreamHandler()
+    handler.setFormatter(KSTFormatter("%(asctime)s [%(levelname)s] %(message)s"))
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.handlers = [handler]s [%(levelname)s] %(message)s")
     logging.info("1) KIS API 인증 시작")
     auth()
     logging.info("2) KIS API 인증 완료")
