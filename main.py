@@ -59,9 +59,12 @@ def compute_signals(df):
             signals.append((idx, 'sell'))
     return signals
 
+# 환경 변수: 투자자 순매수 엔드포인트 경로
+INVESTOR_NET_PATH = os.getenv('INVESTOR_NET_PATH', 'investor-net')  # API Portal Service Path로 설정
+
 # 투자자 순매수 조회 (외국인 또는 기관)
 def get_top_net_buy(inv_div_code, count=10):
-    url = f"{KIS_BASE}/investor-net"
+    url = f"{KIS_BASE}/{INVESTOR_NET_PATH}"
     headers = {'Content-Type': 'application/json', 'appKey': KIS_APP_KEY, 'appSecret': KIS_APP_SECRET}
     params = {
         'CANO': KIS_ACCNO,
@@ -72,12 +75,15 @@ def get_top_net_buy(inv_div_code, count=10):
     }
     try:
         r = session.get(url, headers=headers, params=params, timeout=10)
+        if r.status_code == 404:
+            print(f"Endpoint not found: {INVESTOR_NET_PATH} (404)")
+            return []
         r.raise_for_status()
         data = r.json()
         items = data.get('output2', [])
         return [item['stck_shrn_iscd'] for item in items]
     except Exception as e:
-        print(f"Error fetching investor-net ({inv_div_code}): {e}")
+        print(f"Error fetching {INVESTOR_NET_PATH} ({inv_div_code}): {e}")
         return []
 
 # 외국인/기관 교집합 종목
@@ -141,4 +147,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
