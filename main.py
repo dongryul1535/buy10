@@ -5,13 +5,14 @@ main.py
 
 KIS OpenAPI 인증 + 외국인 순매수 상위 10종목 조회
 + FinanceDataReader로 6개월치 가격 데이터 조회
-+ NH MTS 스타일 Composite MACD+Stochastic 차트 작성
-+ Golden/Dead Cross 감지 시 Telegram 알림
++ NH MTS 스타일 Composite MACD+Stochastic 차트 작성 (가격+MA20, MACD+SlowK/D)
++ Golden/Dead Cross 감지 시 Telegram 알림 (거래대금, 등락률, 전일비, 한글 폰트)
 + 모든 날짜 연산을 한국 표준시(Asia/Seoul) 기준으로 처리
 
 환경변수:
   KIS_APP_KEY, KIS_APP_SECRET
   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+  FONT_PATH: fonts/NanumGothic.ttf (선택, 한글 폰트)
 
 필수 패키지:
   requests, pandas, FinanceDataReader, matplotlib, python-dateutil
@@ -29,6 +30,15 @@ import matplotlib.pyplot as plt
 import io
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+
+# 한글 폰트 적용
+font_path = os.getenv("FONT_PATH", "fonts/NanumGothic.ttf")
+from matplotlib import font_manager, rc
+if os.path.exists(font_path):
+    fontprop = font_manager.FontProperties(fname=font_path)
+    plt.rc('font', family=fontprop.get_name())
+else:
+    fontprop = None  # fallback
 
 # 타임존 처리
 try:
@@ -64,7 +74,7 @@ API_URL = (
     "https://openapi.koreainvestment.com:9443"
     "/uapi/domestic-stock/v1/quotations/foreign-institution-total"
 )
-TR_ID   = "FHPTJ04400000"  # ← tr_id 최신값!
+TR_ID   = "FHPTJ04400000"
 PARAMS = {
     "fid_cond_mrkt_div_code":    "V",
     "fid_cond_scr_div_code":     "16449",
@@ -87,7 +97,7 @@ def fetch_top10_foreign() -> pd.DataFrame:
     }
     for attempt in range(1, 4):
         resp = requests.get(API_URL, headers=headers, params=PARAMS, timeout=10)
-        print(resp.text)  # 응답 전문 출력(디버깅)
+        print(resp.text)  # 디버그용
         if resp.status_code == 200:
             break
         logging.warning(f"UAPI GET {attempt}회차 실패: {resp.status_code} {resp.text}")
@@ -96,7 +106,6 @@ def fetch_top10_foreign() -> pd.DataFrame:
         logging.error("UAPI 모든 시도 실패")
         return pd.DataFrame()
 
-    # output이 바로 리스트임!
     payload = resp.json().get("output", [])
     if not payload or not isinstance(payload, list):
         logging.warning(f"조회 결과 없음: {payload}")
@@ -134,7 +143,7 @@ def send_photo(img_bytes: bytes, caption: str = ""):
     resp.raise_for_status()
 
 # 4) 분석 및 시그널 탐지
-def analyze_symbol(code: str, name: str):
+def analyze_symbol(code: str, name: str, trading_value: float = None):
     now = datetime.now(KST)
     start = (now - relativedelta(months=6)).date()
     end   = now.date()
@@ -142,6 +151,15 @@ def analyze_symbol(code: str, name: str):
     if df.empty:
         logging.warning(f"{code}({name}) 데이터 조회 실패: {start}~{end}")
         return
+
+    # 가격/이동평균
+    df["MA20"] = df["Close"].rolling(20).mean()
+    today_close = df["Close"].iloc[-1]
+    yesterday_close = df["Close"].iloc[-2] if len(df) > 1 else today_close
+    change = today_close - yesterday_close
+    change_rate = change / yesterday_close * 100 if yesterday_close else 0
+
+    # MACD, Signal, Stochastic
     ema_fast = df["Close"].ewm(span=12, adjust=False).mean()
     ema_slow = df["Close"].ewm(span=26, adjust=False).mean()
     macd_line = ema_fast - ema_slow
@@ -152,28 +170,50 @@ def analyze_symbol(code: str, name: str):
     stoch_d = stoch_k.rolling(3).mean()
     comp_k = macd_line + stoch_k
     comp_d = signal_line + stoch_d
-    if len(comp_k) < 2:
-        return
-    prev_k, prev_d = comp_k.iloc[-2], comp_d.iloc[-2]
-    curr_k, curr_d = comp_k.iloc[-1], comp_d.iloc[-1]
+
+    # 차트 그리기 (가격/MA20 + MACD+Stoch)
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10,8), sharex=True, gridspec_kw={'height_ratios':[2,1]})
+    ax1.plot(df.index, df["Close"], label="종가")
+    ax1.plot(df.index, df["MA20"], label="MA20", linestyle="--")
+    ax1.set_title(f"{code}.KS ({name})", fontproperties=fontprop)
+    ax1.legend(loc="best", prop=fontprop)
+    ax1.grid(True)
+
+    ax2.plot(df.index, comp_k, label="MACD+Slow%K", color="red")
+    ax2.plot(df.index, comp_d, label="MACD+Slow%D", color="purple")
+    ax2.set_ylim(0, 100)
+    ax2.set_title("MACD+Stochastic (NH Style)", fontproperties=fontprop)
+    ax2.legend(loc="best", prop=fontprop)
+    ax2.grid(True)
+
+    plt.tight_layout()
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png")
+    buf.seek(0)
+    plt.close()
+
+    # 시그널 감지
     signal = None
-    if prev_k < prev_d and curr_k > curr_d:
-        signal = "BUY"
-    elif prev_k > prev_d and curr_k < curr_d:
-        signal = "SELL"
+    if len(comp_k) >= 2:
+        prev_k, prev_d = comp_k.iloc[-2], comp_d.iloc[-2]
+        curr_k, curr_d = comp_k.iloc[-1], comp_d.iloc[-1]
+        if prev_k < prev_d and curr_k > curr_d:
+            signal = "BUY"
+        elif prev_k > prev_d and curr_k < curr_d:
+            signal = "SELL"
+
+    # 텔레그램 메시지
+    trading_value_str = f"{trading_value:,}" if trading_value is not None else "-"
+    msg = (
+        f"{name} ({code})\n"
+        f"외국인 순매수 거래대금: {trading_value_str}백만원\n"
+        f"현재가: {today_close:,.0f}원 ({change:+,.0f} / {change_rate:+.2f}%)\n"
+    )
     if signal:
-        plt.figure(figsize=(10,6))
-        plt.plot(df.index, comp_k, label="Composite K")
-        plt.plot(df.index, comp_d, label="Composite D")
-        plt.title(f"{name}({code}) {signal} ({start}~{end})")
-        plt.legend()
-        plt.tight_layout()
-        buf = io.BytesIO()
-        plt.savefig(buf, format="png")
-        buf.seek(0)
-        plt.close()
-        send_photo(buf.getvalue(), f"{name}({code}) - {signal}")
-        send_message(f"{name}({code}): {signal} 신호 발생 ({start}~{end})")
+        msg += f"시그널: {signal}"
+
+    send_photo(buf.getvalue(), caption=msg)
+    send_message(msg)
 
 # 5) 메인 실행
 class KSTFormatter(logging.Formatter):
@@ -181,7 +221,6 @@ class KSTFormatter(logging.Formatter):
         return datetime.fromtimestamp(timestamp, KST).timetuple()
 
 def main():
-    # KST 타임존 포매터 적용
     handler = logging.StreamHandler()
     handler.setFormatter(KSTFormatter("%(asctime)s [%(levelname)s] %(message)s"))
     root = logging.getLogger()
@@ -197,7 +236,11 @@ def main():
     print("\n=== 외국인 순매수 거래대금 상위 10종목 ===\n")
     print(top10[["종목코드","종목명","외국인 순매수 거래대금"]])
     for _, row in top10.iterrows():
-        analyze_symbol(row["종목코드"], row["종목명"])
+        analyze_symbol(
+            row["종목코드"],
+            row["종목명"],
+            row.get("외국인 순매수 거래대금")
+        )
 
 if __name__ == "__main__":
     main()
