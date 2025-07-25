@@ -1,8 +1,19 @@
+import os
+import time
+import logging
+import requests
+import pandas as pd
+import FinanceDataReader as fdr
+import matplotlib.pyplot as plt
+import io
+import numpy as np
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+
 # 한글 폰트 적용 (있으면 NanumGothic, 없으면 sans-serif)
 FONT_PATH = os.getenv("FONT_PATH", "fonts/NanumGothic.ttf")
 font_path = FONT_PATH
 from matplotlib import font_manager, rc
-import matplotlib.pyplot as plt
 import warnings
 
 if os.path.exists(font_path):
@@ -214,7 +225,6 @@ def analyze_symbol(code: str, name: str, trading_value: float = None):
         msg += f"시그널: {signal}"
 
     send_photo(buf.getvalue(), caption=msg)
-    # send_message(msg)  # <--- 이 줄 제거!
 
 # 5) 메인 실행
 class KSTFormatter(logging.Formatter):
