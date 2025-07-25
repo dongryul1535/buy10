@@ -1,4 +1,3 @@
-
 import os
 import time
 import logging
@@ -67,6 +66,7 @@ def fetch_top10_foreign() -> pd.DataFrame:
     }
     for attempt in range(1, 4):
         resp = requests.get(API_URL, headers=headers, params=PARAMS, timeout=10)
+        print(resp.text)  # ← 디버깅을 위해 응답 전문 출력
         if resp.status_code == 200:
             break
         logging.warning(f"UAPI GET {attempt}회차 실패: {resp.status_code} {resp.text}")
