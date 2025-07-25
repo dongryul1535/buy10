@@ -28,7 +28,8 @@ from dateutil.relativedelta import relativedelta
 # ──────────────────────────────────────────────────────────────────────────────
 API_KEY    = os.getenv("KIS_APP_KEY")
 API_SECRET = os.getenv("KIS_APP_SECRET")
-TOKEN_URL  = "https://openapi.koreainvestment.com:9443/oauth2/tokenP"
+# 실거래 키 사용 시 token 엔드포인트를 사용합니다.
+TOKEN_URL  = "https://openapi.koreainvestment.com:9443/oauth2/token"
 _access_token = None
 
 def auth():
@@ -38,7 +39,9 @@ def auth():
     data = {"grant_type": "client_credentials", "appkey": API_KEY, "appsecret": API_SECRET}
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
     resp = requests.post(TOKEN_URL, data=data, headers=headers)
-    resp.raise_for_status()
+    if resp.status_code != 200:
+        logging.error(f"토큰 요청 실패 {resp.status_code}: {resp.text}")
+        resp.raise_for_status()
     body = resp.json()
     _access_token = body.get("access_token")
     if not _access_token:
@@ -169,8 +172,9 @@ def analyze_symbol(code: str, name: str):
 # ──────────────────────────────────────────────────────────────────────────────
 
 def main():
-    logging.info("KIS API 인증 완료")
+    logging.info("1) KIS API 인증 시작")
     auth()
+    logging.info("2) KIS API 인증 완료")
     top10 = fetch_top10_foreign()
 
     print("\n=== 외국인 순매수 거래대금 상위 10종목 ===\n")
