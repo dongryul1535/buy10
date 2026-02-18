@@ -44,8 +44,8 @@ K_SMOOTH    = 3
 D_SMOOTH    = 3
 OB_LINE     = 80
 OS_LINE     = 20
-DAILY_BARS  = 30
-WEEKLY_BARS = 30
+DAILY_BARS  = 60       # ★ 일봉 60일
+WEEKLY_BARS = 30       # 주봉 30주
 
 COLOR_K = "#FF0000"
 COLOR_D = "#9900FF"
@@ -235,7 +235,6 @@ def _plot_panel(ax_candle, ax_ind, df, title, date_fmt):
     dates_num = mdates.date2num(dates_dt)
     close     = df['Close'].astype(float)
 
-    # ── 캔들 + 이평선 ──
     draw_candlestick(ax_candle, df)
 
     ma5  = close.rolling(5,  min_periods=1).mean()
@@ -250,7 +249,6 @@ def _plot_panel(ax_candle, ax_ind, df, title, date_fmt):
     ax_candle.grid(True, alpha=0.25)
     ax_candle.set_xlim(dates_num[0] - 1, dates_num[-1] + 1)
 
-    # ── MACD+Stochastic ──
     ax_ind.plot(dates_num, df['CompK'].values, color=COLOR_K, linewidth=1.0,
                 label='MACD+Slow%K')
     ax_ind.plot(dates_num, df['CompD'].values, color=COLOR_D, linewidth=1.0,
@@ -266,7 +264,6 @@ def _plot_panel(ax_candle, ax_ind, df, title, date_fmt):
     ax_ind.set_xlim(dates_num[0] - 1, dates_num[-1] + 1)
     ax_ind.xaxis.set_major_formatter(mdates.DateFormatter(date_fmt))
 
-    # 마지막 값 표시
     last_k = df['CompK'].iloc[-1]
     last_d = df['CompD'].iloc[-1]
     ax_ind.annotate(f'{last_k:.1f}', xy=(dates_num[-1], last_k),
@@ -294,7 +291,7 @@ def send_photo(img_bytes: bytes, caption: str = ""):
     resp = requests.post(SEND_PHOTO_URL, files=files, data=data)
     resp.raise_for_status()
 
-# ════════════════════════ 8) 분석 (1열 4행: 일봉캔들→일봉지표→주봉캔들→주봉지표) ════════════════════════
+# ════════════════════════ 8) 분석 (1열 4행) ════════════════════════
 def analyze_symbol(code: str, name: str, trading_value: float = None):
     now   = datetime.now(KST)
     start = (now - relativedelta(months=14)).date()
@@ -316,22 +313,18 @@ def analyze_symbol(code: str, name: str, trading_value: float = None):
     change      = today_close - yesterday_close
     change_rate = change / yesterday_close * 100 if yesterday_close else 0
 
-    # 일봉
+    # 일봉: 전체로 지표 계산 → 최근 60일만 표시
     df_daily_full = add_composites(df_raw.copy())
     df_daily_show = df_daily_full.tail(DAILY_BARS).reset_index(drop=True)
     sig_daily = detect_cross(df_daily_full)
 
-    # 주봉
+    # 주봉: 리샘플 → 지표 계산 → 최근 30주만 표시
     df_weekly_full = resample_weekly(df_raw.copy())
     df_weekly_full = add_composites(df_weekly_full)
     df_weekly_show = df_weekly_full.tail(WEEKLY_BARS).reset_index(drop=True)
     sig_weekly = detect_cross(df_weekly_full)
 
     # ════════════ 1열 × 4행 차트 ════════════
-    #  row 0 : 일봉 캔들   (높이 비율 3)
-    #  row 1 : 일봉 지표   (높이 비율 1)
-    #  row 2 : 주봉 캔들   (높이 비율 3)
-    #  row 3 : 주봉 지표   (높이 비율 1)
     fig, (ax_dc, ax_di, ax_wc, ax_wi) = plt.subplots(
         nrows=4, ncols=1, figsize=(10, 14),
         gridspec_kw={'height_ratios': [3, 1, 3, 1], 'hspace': 0.35}
@@ -362,7 +355,6 @@ def analyze_symbol(code: str, name: str, trading_value: float = None):
     buf.seek(0)
     plt.close(fig)
 
-    # 메시지
     trading_str = f"{trading_value:,.0f}" if trading_value is not None else "-"
     msg = (
         f"{name} ({code})\n"
